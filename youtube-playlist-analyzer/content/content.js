@@ -13,6 +13,15 @@
     }
   }
 
+  // Intercept and suppress "Extension context invalidated" errors from orphaned scripts
+  window.addEventListener('error', (event) => {
+    if (event && event.message && event.message.includes('Extension context invalidated')) {
+      event.stopImmediatePropagation();
+      event.preventDefault();
+      return true;
+    }
+  }, true);
+
   // Listen for messages from popup/background
   if (isContextValid()) {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -223,7 +232,8 @@
   }
 
   function waitForElement(selector, timeout = 10000) {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
+      if (!isContextValid()) return resolve(null);
       const existing = document.querySelector(selector);
       if (existing) {
         resolve(existing);
@@ -231,6 +241,11 @@
       }
 
       const observer = new MutationObserver(() => {
+        if (!isContextValid()) {
+          try { observer.disconnect(); } catch (e) {}
+          resolve(null);
+          return;
+        }
         const el = document.querySelector(selector);
         if (el) {
           observer.disconnect();
@@ -244,7 +259,7 @@
       });
 
       setTimeout(() => {
-        observer.disconnect();
+        try { observer.disconnect(); } catch (e) {}
         resolve(null);
       }, timeout);
     });
@@ -409,6 +424,7 @@
   let playlistData = null;
 
   function togglePanel() {
+    if (!isContextValid()) return;
     panelOpen = !panelOpen;
     const panel = document.getElementById('yt-pa-panel');
     const btn = document.getElementById('yt-playlist-analyzer-btn');
@@ -416,18 +432,19 @@
     if (panelOpen) {
       createPanel();
       const p = document.getElementById('yt-pa-panel');
-      p.classList.add('open');
-      btn.classList.add('active');
+      if (p) p.classList.add('open');
+      if (btn) btn.classList.add('active');
       runAnalysis();
     } else {
       if (panel) {
         panel.classList.remove('open');
-        btn.classList.remove('active');
+        if (btn) btn.classList.remove('active');
       }
     }
   }
 
   async function runAnalysis() {
+    if (!isContextValid()) return;
     const loading = document.getElementById('yt-pa-loading');
     const noPlaylist = document.getElementById('yt-pa-no-playlist');
     const results = document.getElementById('yt-pa-results');
@@ -576,6 +593,7 @@
   // ===== FLOATING BUTTON =====
 
   function injectFloatingButton() {
+    if (!isContextValid()) return;
     if (document.getElementById('yt-playlist-analyzer-btn')) return;
 
     const btn = document.createElement('div');
@@ -590,14 +608,21 @@
       <span class="yt-pa-tooltip">Playlist Analyzer</span>
     `;
     btn.title = 'YouTube Playlist Analyzer';
-    btn.addEventListener('click', togglePanel);
+    btn.addEventListener('click', () => {
+      if (!isContextValid()) return;
+      togglePanel();
+    });
     document.body.appendChild(btn);
   }
 
   // Watch for navigation changes (YouTube is SPA)
   function watchNavigation() {
     let lastUrl = location.href;
-    new MutationObserver(() => {
+    const observer = new MutationObserver(() => {
+      if (!isContextValid()) {
+        try { observer.disconnect(); } catch (e) {}
+        return;
+      }
       const url = location.href;
       if (url !== lastUrl) {
         lastUrl = url;
@@ -610,12 +635,14 @@
           if (btn) btn.classList.remove('active');
         }
         setTimeout(() => {
+          if (!isContextValid()) return;
           if (!document.getElementById('yt-playlist-analyzer-btn')) {
             injectFloatingButton();
           }
         }, 1500);
       }
-    }).observe(document.body, { childList: true, subtree: true });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
   }
 
   // Initialize
