@@ -286,7 +286,15 @@
           </svg>
           <span>Playlist Analyzer</span>
         </div>
-        <button class="yt-pa-panel-close" id="yt-pa-close">&times;</button>
+        <button class="yt-pa-panel-close" id="yt-pa-close" title="Close">&times;</button>
+      </div>
+      <div class="yt-pa-top-nav" id="yt-pa-top-nav" style="display:none;">
+        <div class="yt-pa-playlist-name" id="yt-pa-playlist-name"></div>
+        <div class="yt-pa-tabs">
+          <button class="yt-pa-tab active" data-tab="overview">Overview</button>
+          <button class="yt-pa-tab" data-tab="speeds">Speeds</button>
+          <button class="yt-pa-tab" data-tab="schedule">Schedule</button>
+        </div>
       </div>
       <div class="yt-pa-panel-body" id="yt-pa-body">
         <div class="yt-pa-loading" id="yt-pa-loading">
@@ -301,14 +309,6 @@
           <p style="font-size:12px;color:#888;margin-top:4px;">Navigate to a YouTube playlist to analyze it.</p>
         </div>
         <div class="yt-pa-results" id="yt-pa-results" style="display:none;">
-          <div class="yt-pa-playlist-name" id="yt-pa-playlist-name"></div>
-
-          <!-- Tabs -->
-          <div class="yt-pa-tabs">
-            <button class="yt-pa-tab active" data-tab="overview">Overview</button>
-            <button class="yt-pa-tab" data-tab="speeds">Speeds</button>
-            <button class="yt-pa-tab" data-tab="schedule">Schedule</button>
-          </div>
 
           <!-- Overview Tab -->
           <div class="yt-pa-tab-content active" id="yt-pa-tc-overview">
@@ -448,10 +448,12 @@
     const loading = document.getElementById('yt-pa-loading');
     const noPlaylist = document.getElementById('yt-pa-no-playlist');
     const results = document.getElementById('yt-pa-results');
+    const topNav = document.getElementById('yt-pa-top-nav');
 
     loading.style.display = 'flex';
     noPlaylist.style.display = 'none';
     results.style.display = 'none';
+    if (topNav) topNav.style.display = 'none';
 
     if (!isPlaylistPage()) {
       loading.style.display = 'none';
@@ -507,6 +509,7 @@
 
       renderInlineResults();
       loading.style.display = 'none';
+      if (topNav) topNav.style.display = 'block';
       results.style.display = 'block';
 
     } catch (err) {
