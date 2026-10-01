@@ -1,40 +1,57 @@
 /* YouTube Playlist Analyzer - Content Script Styles */
 
+/* ===== FLOATING BUBBLE ===== */
 #yt-playlist-analyzer-btn {
   position: fixed;
-  bottom: 80px;
+  bottom: 24px;
   right: 24px;
-  z-index: 9999;
-  width: 56px;
-  height: 56px;
+  z-index: 99999;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background: linear-gradient(135deg, #ff0000, #cc0000);
-  box-shadow: 0 4px 16px rgba(255, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 10px rgba(255, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  animation: yt-pa-pulse 2s infinite;
+  opacity: 0.85;
 }
 
 #yt-playlist-analyzer-btn:hover {
-  transform: scale(1.1);
-  box-shadow: 0 6px 24px rgba(255, 0, 0, 0.5), 0 4px 8px rgba(0, 0, 0, 0.3);
+  opacity: 1;
+  transform: scale(1.12);
+  box-shadow: 0 4px 18px rgba(255, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
 #yt-playlist-analyzer-btn:active {
   transform: scale(0.95);
 }
 
+#yt-playlist-analyzer-btn.active {
+  opacity: 1;
+  background: linear-gradient(135deg, #cc0000, #990000);
+  box-shadow: 0 2px 12px rgba(255, 0, 0, 0.5);
+}
+
+#yt-playlist-analyzer-btn .yt-pa-clock {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  background: #cc0000;
+  border-radius: 50%;
+  padding: 1px;
+}
+
 #yt-playlist-analyzer-btn .yt-pa-tooltip {
   position: absolute;
-  right: 68px;
+  right: 54px;
   background: #212121;
   color: white;
-  padding: 8px 14px;
-  border-radius: 8px;
-  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
   font-family: 'Roboto', 'YouTube Sans', sans-serif;
   white-space: nowrap;
   opacity: 0;
@@ -47,8 +64,432 @@
   opacity: 1;
 }
 
-@keyframes yt-pa-pulse {
-  0% { box-shadow: 0 4px 16px rgba(255, 0, 0, 0.4), 0 2px 4px rgba(0,0,0,0.2); }
-  50% { box-shadow: 0 4px 24px rgba(255, 0, 0, 0.6), 0 2px 4px rgba(0,0,0,0.2); }
-  100% { box-shadow: 0 4px 16px rgba(255, 0, 0, 0.4), 0 2px 4px rgba(0,0,0,0.2); }
+/* ===== INLINE PANEL ===== */
+#yt-pa-panel {
+  position: fixed;
+  bottom: 78px;
+  right: 24px;
+  width: 370px;
+  max-height: 520px;
+  background: #1a1a1a;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3);
+  z-index: 99998;
+  overflow: hidden;
+  transform: scale(0.8) translateY(20px);
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: 'Segoe UI', 'Roboto', 'YouTube Sans', sans-serif;
+  color: #fff;
+}
+
+#yt-pa-panel.open {
+  transform: scale(1) translateY(0);
+  opacity: 1;
+  pointer-events: all;
+}
+
+/* Panel Header */
+.yt-pa-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #212121;
+  border-bottom: 1px solid #333;
+}
+
+.yt-pa-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.yt-pa-panel-close {
+  background: none;
+  border: none;
+  color: #aaa;
+  font-size: 22px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  transition: color 0.2s;
+}
+
+.yt-pa-panel-close:hover {
+  color: #fff;
+}
+
+/* Panel Body */
+.yt-pa-panel-body {
+  padding: 0;
+  max-height: 460px;
+  overflow-y: auto;
+}
+
+.yt-pa-panel-body::-webkit-scrollbar {
+  width: 4px;
+}
+.yt-pa-panel-body::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 2px;
+}
+
+/* Loading */
+.yt-pa-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 50px 20px;
+  gap: 14px;
+}
+
+.yt-pa-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #333;
+  border-top-color: #FF0000;
+  border-radius: 50%;
+  animation: yt-pa-spin 0.7s linear infinite;
+}
+
+@keyframes yt-pa-spin {
+  to { transform: rotate(360deg); }
+}
+
+.yt-pa-loading p {
+  color: #aaa;
+  font-size: 13px;
+}
+
+/* No Playlist */
+.yt-pa-no-playlist {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+/* Results */
+.yt-pa-playlist-name {
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ccc;
+  border-bottom: 1px solid #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Tabs */
+.yt-pa-tabs {
+  display: flex;
+  border-bottom: 1px solid #333;
+  background: #1a1a1a;
+}
+
+.yt-pa-tab {
+  flex: 1;
+  padding: 9px 8px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #888;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.yt-pa-tab:hover {
+  color: #ddd;
+}
+
+.yt-pa-tab.active {
+  color: #fff;
+  border-bottom-color: #FF0000;
+}
+
+/* Tab content */
+.yt-pa-tab-content {
+  display: none;
+  padding: 14px 16px;
+}
+
+.yt-pa-tab-content.active {
+  display: block;
+}
+
+/* ===== OVERVIEW TAB — clean list ===== */
+.yt-pa-overview-list {
+  background: #222;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.yt-pa-ov-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 11px 14px;
+  border-bottom: 1px solid #2d2d2d;
+}
+
+.yt-pa-ov-row:last-child {
+  border-bottom: none;
+}
+
+.yt-pa-ov-label {
+  font-size: 13px;
+  color: #999;
+}
+
+.yt-pa-ov-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.yt-pa-ov-value.yt-pa-ov-main {
+  color: #fff;
+  font-size: 15px;
+}
+
+.yt-pa-ov-value.yt-pa-ov-accent {
+  color: #3ea6ff;
+}
+
+.yt-pa-ov-value.yt-pa-ov-small {
+  font-size: 12px;
+  font-weight: 500;
+  color: #aaa;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* ===== SPEEDS TAB ===== */
+.yt-pa-speed-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.yt-pa-speed-row:last-child {
+  border-bottom: none;
+}
+
+.yt-pa-speed-badge {
+  background: #cc0000;
+  color: white;
+  padding: 3px 9px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 42px;
+  text-align: center;
+}
+
+.yt-pa-speed-row.recommended .yt-pa-speed-badge {
+  background: #2e7d32;
+}
+
+.yt-pa-speed-bar-bg {
+  flex: 1;
+  height: 4px;
+  background: #333;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.yt-pa-speed-bar-fill {
+  height: 100%;
+  background: #cc0000;
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+.yt-pa-speed-row.recommended .yt-pa-speed-bar-fill {
+  background: #2e7d32;
+}
+
+.yt-pa-speed-dur {
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 80px;
+  text-align: right;
+}
+
+/* Time Saved */
+.yt-pa-time-saved {
+  margin-top: 18px;
+  background: #222;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.yt-pa-ts-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: #ccc;
+}
+
+.yt-pa-ts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.yt-pa-ts-item {
+  text-align: center;
+  padding: 8px;
+  background: rgba(46, 125, 50, 0.12);
+  border-radius: 8px;
+}
+
+.yt-pa-ts-speed {
+  font-size: 10px;
+  color: #888;
+  margin-bottom: 3px;
+}
+
+.yt-pa-ts-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: #4caf50;
+}
+
+/* ===== SCHEDULE TAB ===== */
+.yt-pa-sched-header,
+.yt-pa-sched-row {
+  display: grid;
+  grid-template-columns: 90px 1fr 1fr 1fr;
+  gap: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  align-items: center;
+}
+
+.yt-pa-sched-header {
+  color: #666;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.3px;
+}
+
+.yt-pa-sched-row {
+  background: #222;
+  border-radius: 8px;
+  margin-bottom: 4px;
+}
+
+.yt-pa-sched-label {
+  color: #aaa;
+  font-weight: 500;
+}
+
+.yt-pa-sched-row span {
+  text-align: center;
+  font-weight: 600;
+}
+
+.yt-pa-highlight {
+  color: #3ea6ff !important;
+}
+
+/* Divider between schedule table and custom calculator */
+.yt-pa-cc-divider {
+  height: 1px;
+  background: #333;
+  margin: 18px 0;
+}
+
+/* Custom Calculator */
+.yt-pa-custom-calc {
+  background: #222;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.yt-pa-cc-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 14px;
+  color: #ccc;
+}
+
+.yt-pa-cc-row {
+  display: flex;
+  gap: 12px;
+}
+
+.yt-pa-cc-input {
+  flex: 1;
+}
+
+.yt-pa-cc-input label {
+  display: block;
+  font-size: 11px;
+  color: #777;
+  margin-bottom: 6px;
+}
+
+.yt-pa-cc-input input,
+.yt-pa-cc-input select {
+  width: 100%;
+  padding: 8px 10px;
+  background: #1a1a1a;
+  border: 1px solid #444;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 13px;
+  outline: none;
+  font-family: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.yt-pa-cc-input select {
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23999' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+}
+
+.yt-pa-cc-input input:focus,
+.yt-pa-cc-input select:focus {
+  border-color: #ff0000;
+}
+
+.yt-pa-cc-result {
+  margin-top: 14px;
+  text-align: center;
+  padding: 12px;
+  background: rgba(62, 166, 255, 0.08);
+  border-radius: 8px;
+  font-size: 13px;
+  color: #aaa;
+}
+
+.yt-pa-cc-days {
+  display: block;
+  font-size: 26px;
+  font-weight: 700;
+  color: #3ea6ff;
+  margin-bottom: 2px;
 }
