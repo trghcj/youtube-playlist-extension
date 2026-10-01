@@ -1,0 +1,54 @@
+/* YouTube Playlist Analyzer - Content Script Styles */
+
+#yt-playlist-analyzer-btn {
+  position: fixed;
+  bottom: 80px;
+  right: 24px;
+  z-index: 9999;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ff0000, #cc0000);
+  box-shadow: 0 4px 16px rgba(255, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: yt-pa-pulse 2s infinite;
+}
+
+#yt-playlist-analyzer-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 24px rgba(255, 0, 0, 0.5), 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+#yt-playlist-analyzer-btn:active {
+  transform: scale(0.95);
+}
+
+#yt-playlist-analyzer-btn .yt-pa-tooltip {
+  position: absolute;
+  right: 68px;
+  background: #212121;
+  color: white;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: 'Roboto', 'YouTube Sans', sans-serif;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+#yt-playlist-analyzer-btn:hover .yt-pa-tooltip {
+  opacity: 1;
+}
+
+@keyframes yt-pa-pulse {
+  0% { box-shadow: 0 4px 16px rgba(255, 0, 0, 0.4), 0 2px 4px rgba(0,0,0,0.2); }
+  50% { box-shadow: 0 4px 24px rgba(255, 0, 0, 0.6), 0 2px 4px rgba(0,0,0,0.2); }
+  100% { box-shadow: 0 4px 16px rgba(255, 0, 0, 0.4), 0 2px 4px rgba(0,0,0,0.2); }
+}
