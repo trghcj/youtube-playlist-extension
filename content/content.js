@@ -165,6 +165,8 @@
       }
     }
 
+    const currentVideoIndex = getCurrentVideoIndex(videos);
+
     return {
       playlistId,
       playlistTitle,
@@ -172,8 +174,38 @@
       playlistUrl: `https://www.youtube.com/playlist?list=${playlistId}`,
       totalVideoCount,
       loadedVideoCount: videos.length,
+      currentVideoIndex,
       videos
     };
+  }
+
+  function getCurrentVideoIndex(videos) {
+    const urlParams = new URLSearchParams(window.location.search);
+
+    // 1. Try URL &index= parameter
+    const urlIndex = parseInt(urlParams.get('index'), 10);
+    if (!isNaN(urlIndex) && urlIndex >= 1 && (!videos || urlIndex <= videos.length)) {
+      return urlIndex;
+    }
+
+    // 2. Try URL &v= video ID parameter
+    const currentVideoId = urlParams.get('v');
+    if (currentVideoId && videos && videos.length > 0) {
+      const matchIndex = videos.findIndex(v => v.url && v.url.includes(currentVideoId));
+      if (matchIndex !== -1) {
+        return matchIndex + 1;
+      }
+    }
+
+    // 3. Try DOM selected queue item
+    if (videos && videos.length > 0) {
+      const selIdx = videos.findIndex(v => v.isSelected);
+      if (selIdx !== -1) {
+        return selIdx + 1;
+      }
+    }
+
+    return 1;
   }
 
   function extractVideoItems() {
@@ -217,6 +249,10 @@
       const isUnavailable = el.querySelector('[is-unavailable]') !== null ||
                             el.classList.contains('ytd-unavailable-video-renderer');
 
+      const isSelected = el.hasAttribute('selected') ||
+                         el.getAttribute('aria-selected') === 'true' ||
+                         el.querySelector('ytd-thumbnail-overlay-now-playing-renderer') !== null;
+
       videos.push({
         index: index + 1,
         title,
@@ -224,7 +260,8 @@
         durationFormatted: formatTime(durationSeconds),
         channel: videoChannel,
         url: videoUrl,
-        isUnavailable
+        isUnavailable,
+        isSelected
       });
     });
 
@@ -372,6 +409,36 @@
 
           <!-- Overview Tab -->
           <div class="yt-pa-tab-content active" id="yt-pa-tc-overview">
+            <div class="yt-pa-rem-card" id="yt-pa-rem-card">
+              <div class="yt-pa-rem-header">
+                <span class="yt-pa-rem-badge" id="yt-pa-rem-badge">Now at Video 1</span>
+                <div class="yt-pa-rem-ctrl">
+                  <span class="yt-pa-rem-label-from">From #</span>
+                  <input type="number" id="yt-pa-rem-input" class="yt-pa-rem-input" min="1" value="1">
+                  <span id="yt-pa-rem-total-label" class="yt-pa-rem-total-label">of 1</span>
+                </div>
+              </div>
+              <div class="yt-pa-rem-grid">
+                <div class="yt-pa-rem-item primary">
+                  <span class="yt-pa-rem-k">Remaining</span>
+                  <span class="yt-pa-rem-v" id="yt-pa-rem-dur">--</span>
+                </div>
+                <div class="yt-pa-rem-item">
+                  <span class="yt-pa-rem-k">Videos Left</span>
+                  <span class="yt-pa-rem-v" id="yt-pa-rem-count">--</span>
+                </div>
+                <div class="yt-pa-rem-item highlight">
+                  <span class="yt-pa-rem-k">At 1.5×</span>
+                  <span class="yt-pa-rem-v" id="yt-pa-rem-15x">--</span>
+                </div>
+                <div class="yt-pa-rem-item">
+                  <span class="yt-pa-rem-k">At 2×</span>
+                  <span class="yt-pa-rem-v" id="yt-pa-rem-2x">--</span>
+                </div>
+              </div>
+            </div>
+            <div class="yt-pa-divider"></div>
+            <div class="yt-pa-section-heading" style="margin-bottom: 8px;">Total Playlist Stats</div>
             <div class="yt-pa-ov-list">
               <div class="yt-pa-ov-row">
                 <span class="yt-pa-ov-label">Total duration</span>
@@ -420,6 +487,13 @@
             <div class="yt-pa-custom-calc">
               <div class="yt-pa-section-heading">Custom calculator</div>
               <div class="yt-pa-cc-grid">
+                <div class="yt-pa-cc-field" style="grid-column: span 2;">
+                  <label class="yt-pa-field-label">Calculate for</label>
+                  <select id="yt-pa-custom-scope" class="yt-pa-select">
+                    <option value="remaining" selected>Remaining videos</option>
+                    <option value="all">Entire playlist</option>
+                  </select>
+                </div>
                 <div class="yt-pa-cc-field">
                   <label class="yt-pa-field-label">Watch time</label>
                   <select id="yt-pa-custom-hrs" class="yt-pa-select">
@@ -517,11 +591,19 @@
       });
     }
 
-    // Custom calculator
+    // Custom calculator & remaining inputs
+    const remInput = document.getElementById('yt-pa-rem-input');
+    if (remInput) {
+      remInput.addEventListener('input', () => {
+        updateInlineRemaining(remInput.value);
+      });
+    }
+    const customScope = document.getElementById('yt-pa-custom-scope');
+    if (customScope) customScope.addEventListener('change', updateCustomCalc);
     const customHrs = document.getElementById('yt-pa-custom-hrs');
     const customSpd = document.getElementById('yt-pa-custom-spd');
-    customHrs.addEventListener('change', updateCustomCalc);
-    customSpd.addEventListener('change', updateCustomCalc);
+    if (customHrs) customHrs.addEventListener('change', updateCustomCalc);
+    if (customSpd) customSpd.addEventListener('change', updateCustomCalc);
   }
 
   let analysisData = null;
@@ -915,14 +997,68 @@
       </div>
     `;
 
+    // Initialize remaining progress card
+    const initialFromIdx = playlistData.currentVideoIndex || 1;
+    const remInput = document.getElementById('yt-pa-rem-input');
+    if (remInput) {
+      remInput.max = playlistData.videos.length;
+      remInput.value = initialFromIdx;
+    }
+    updateInlineRemaining(initialFromIdx);
+
+    updateCustomCalc();
+  }
+
+  function updateInlineRemaining(fromIdx) {
+    if (!playlistData || !playlistData.videos || playlistData.videos.length === 0) return;
+    const total = playlistData.videos.length;
+    fromIdx = Math.max(1, Math.min(parseInt(fromIdx, 10) || 1, total));
+
+    const remInput = document.getElementById('yt-pa-rem-input');
+    if (remInput && parseInt(remInput.value, 10) !== fromIdx) {
+      remInput.value = fromIdx;
+    }
+
+    const remVideos = playlistData.videos.slice(fromIdx - 1);
+    const remSeconds = remVideos.reduce((sum, v) => sum + v.durationSeconds, 0);
+
+    const badge = document.getElementById('yt-pa-rem-badge');
+    if (badge) {
+      badge.textContent = fromIdx > 1 ? `Now at Video ${fromIdx}` : `Full Playlist (${total} vids)`;
+    }
+
+    const totLabel = document.getElementById('yt-pa-rem-total-label');
+    if (totLabel) totLabel.textContent = `of ${total}`;
+
+    const durEl = document.getElementById('yt-pa-rem-dur');
+    if (durEl) durEl.textContent = formatDuration(remSeconds);
+
+    const countEl = document.getElementById('yt-pa-rem-count');
+    if (countEl) countEl.textContent = `${remVideos.length} vids`;
+
+    const at15xEl = document.getElementById('yt-pa-rem-15x');
+    if (at15xEl) at15xEl.textContent = formatDuration(Math.round(remSeconds / 1.5));
+
+    const at2xEl = document.getElementById('yt-pa-rem-2x');
+    if (at2xEl) at2xEl.textContent = formatDuration(Math.round(remSeconds / 2));
+
     updateCustomCalc();
   }
 
   function updateCustomCalc() {
-    if (!analysisData) return;
+    if (!analysisData || !playlistData) return;
     const hrs = parseFloat(document.getElementById('yt-pa-custom-hrs')?.value) || 1;
     const spd = parseFloat(document.getElementById('yt-pa-custom-spd')?.value) || 1;
-    const days = Math.ceil((analysisData.totalSeconds / spd) / (hrs * 3600));
+    const scope = document.getElementById('yt-pa-custom-scope')?.value || 'remaining';
+
+    let targetSeconds = analysisData.totalSeconds;
+    if (scope === 'remaining') {
+      const fromIdx = Math.max(1, Math.min(parseInt(document.getElementById('yt-pa-rem-input')?.value, 10) || 1, playlistData.videos.length));
+      const remVideos = playlistData.videos.slice(fromIdx - 1);
+      targetSeconds = remVideos.reduce((sum, v) => sum + v.durationSeconds, 0);
+    }
+
+    const days = Math.ceil((targetSeconds / spd) / (hrs * 3600));
     const el = document.getElementById('yt-pa-custom-days');
     if (el) el.textContent = `${days} day${days > 1 ? 's' : ''}`;
   }

@@ -76,6 +76,41 @@
 
       <!-- Overview Tab -->
       <div id="tab-overview" class="tab-content active">
+        <!-- Remaining Watch Time Card -->
+        <div class="remaining-card" id="remainingCard">
+          <div class="remaining-header">
+            <div class="remaining-title-group">
+              <span class="remaining-badge" id="currentVideoBadge">Now at Video 1</span>
+              <span class="remaining-title">Remaining Watch Time</span>
+            </div>
+            <div class="remaining-input-group">
+              <label for="fromVideoIndex">From #</label>
+              <input type="number" id="fromVideoIndex" min="1" value="1">
+              <span id="totalVideosCountLabel" class="remaining-total-label">of 0</span>
+            </div>
+          </div>
+          <div class="remaining-stats-grid">
+            <div class="remaining-stat primary">
+              <span class="remaining-label">Remaining Time</span>
+              <span class="remaining-val" id="remainingDuration">--</span>
+            </div>
+            <div class="remaining-stat">
+              <span class="remaining-label">Videos Left</span>
+              <span class="remaining-val" id="remainingCount">--</span>
+            </div>
+            <div class="remaining-stat highlight">
+              <span class="remaining-label">At 1.5× Speed</span>
+              <span class="remaining-val" id="remainingAt1_5x">--</span>
+            </div>
+            <div class="remaining-stat">
+              <span class="remaining-label">At 2× Speed</span>
+              <span class="remaining-val" id="remainingAt2x">--</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-divider-label">Total Playlist Stats</div>
+
         <div class="stats-grid">
           <div class="stat-card primary">
             <div class="stat-icon">
@@ -150,6 +185,13 @@
         <div class="custom-schedule">
           <h4>Custom Calculator</h4>
           <div class="custom-inputs">
+            <div class="input-group full-width-group">
+              <label for="scheduleScope">Calculate for</label>
+              <select id="scheduleScope">
+                <option value="remaining" selected>Remaining Videos</option>
+                <option value="all">Entire Playlist</option>
+              </select>
+            </div>
             <div class="input-group">
               <label for="customHours">Hours per day</label>
               <input type="number" id="customHours" min="0.5" max="24" step="0.5" value="1">

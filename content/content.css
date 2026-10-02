@@ -765,3 +765,102 @@
   color: #F1F1F1;
   font-weight: 600;
 }
+
+/* ===== REMAINING PROGRESS CARD (INLINE PANEL) ===== */
+.yt-pa-rem-card {
+  background: #202020;
+  border: 1px solid #333333;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.yt-pa-rem-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.yt-pa-rem-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  background: rgba(255, 0, 0, 0.15);
+  border: 1px solid rgba(255, 0, 0, 0.35);
+  color: #ff5555;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+}
+
+.yt-pa-rem-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #aaaaaa;
+}
+
+.yt-pa-rem-input {
+  width: 44px;
+  padding: 2px 4px;
+  background: #141414;
+  border: 1px solid #383838;
+  border-radius: 4px;
+  color: #f1f1f1;
+  font-size: 11px;
+  text-align: center;
+  font-family: inherit;
+}
+
+.yt-pa-rem-input:focus {
+  outline: none;
+  border-color: #ff0000;
+}
+
+.yt-pa-rem-total-label {
+  font-size: 11px;
+  color: #717171;
+}
+
+.yt-pa-rem-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.yt-pa-rem-item {
+  display: flex;
+  flex-direction: column;
+  background: #171717;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #282828;
+}
+
+.yt-pa-rem-item.primary .yt-pa-rem-v {
+  color: #ff4e45;
+  font-weight: 700;
+}
+
+.yt-pa-rem-item.highlight .yt-pa-rem-v {
+  color: #3ea6ff;
+  font-weight: 700;
+}
+
+.yt-pa-rem-k {
+  font-size: 10px;
+  color: #888888;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 2px;
+}
+
+.yt-pa-rem-v {
+  font-size: 13px;
+  color: #f1f1f1;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+

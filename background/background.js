@@ -79,6 +79,29 @@ async function handlePlaylistAnalysis(data) {
     daysAt2x: Math.ceil((totalSeconds / 2) / (schedule.hoursPerDay * 3600))
   }));
 
+  // Calculate remaining stats from current video index
+  const currentVideoIndex = Math.max(1, Math.min(parseInt(data.currentVideoIndex, 10) || 1, videos.length));
+  const remainingVideos = videos.slice(currentVideoIndex - 1);
+  const remainingSeconds = remainingVideos.reduce((sum, v) => sum + v.durationSeconds, 0);
+  const remainingSpeeds = speeds.map(speed => ({
+    speed,
+    totalSeconds: Math.round(remainingSeconds / speed),
+    formatted: formatDuration(Math.round(remainingSeconds / speed))
+  }));
+
+  const remainingDailySchedules = [
+    { hoursPerDay: 0.5, label: '30 min/day' },
+    { hoursPerDay: 1, label: '1 hr/day' },
+    { hoursPerDay: 2, label: '2 hrs/day' },
+    { hoursPerDay: 3, label: '3 hrs/day' },
+    { hoursPerDay: 5, label: '5 hrs/day' }
+  ].map(schedule => ({
+    ...schedule,
+    days: Math.ceil(remainingSeconds / (schedule.hoursPerDay * 3600)),
+    daysAt1_5x: Math.ceil((remainingSeconds / 1.5) / (schedule.hoursPerDay * 3600)),
+    daysAt2x: Math.ceil((remainingSeconds / 2) / (schedule.hoursPerDay * 3600))
+  }));
+
   return {
     totalVideos: videos.length,
     totalDuration: formatDuration(totalSeconds),
@@ -89,6 +112,18 @@ async function handlePlaylistAnalysis(data) {
     longest: longest ? { title: longest.title, duration: formatDuration(longest.durationSeconds), seconds: longest.durationSeconds } : null,
     speedAnalysis,
     dailySchedules,
+    currentVideoIndex,
+    remainingStats: {
+      fromIndex: currentVideoIndex,
+      remainingCount: remainingVideos.length,
+      remainingSeconds,
+      remainingDuration: formatDuration(remainingSeconds),
+      speedAnalysis: remainingSpeeds,
+      dailySchedules: remainingDailySchedules,
+      at1_25x: formatDuration(Math.round(remainingSeconds / 1.25)),
+      at1_5x: formatDuration(Math.round(remainingSeconds / 1.5)),
+      at2x: formatDuration(Math.round(remainingSeconds / 2))
+    },
     analyzedAt: new Date().toISOString()
   };
 }

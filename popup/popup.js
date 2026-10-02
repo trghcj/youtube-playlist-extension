@@ -66,11 +66,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Custom schedule calculator
+  // Remaining watch time input
+  const fromVideoInput = document.getElementById('fromVideoIndex');
+  if (fromVideoInput) {
+    fromVideoInput.addEventListener('input', () => {
+      updateRemainingStats(fromVideoInput.value);
+    });
+  }
+
+  // Custom schedule calculator & scope selector
   const customHours = document.getElementById('customHours');
   const customSpeed = document.getElementById('customSpeed');
+  const scheduleScope = document.getElementById('scheduleScope');
   if (customHours) customHours.addEventListener('input', updateCustomSchedule);
   if (customSpeed) customSpeed.addEventListener('change', updateCustomSchedule);
+  if (scheduleScope) scheduleScope.addEventListener('change', updateCustomSchedule);
 
   // Video search
   const videoSearchEl = document.getElementById('videoSearch');
@@ -160,10 +170,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       const count = currentPlaylistData && currentPlaylistData.videos ? currentPlaylistData.videos.length : 0;
       if (statusTextEl) statusTextEl.textContent = `Analyzing ${count} videos...`;
 
-      // Send to background for analysis
+      // Send to background for analysis with currentVideoIndex
       const analysisResponse = await chrome.runtime.sendMessage({
         type: 'ANALYZE_PLAYLIST',
-        data: { videos: currentPlaylistData.videos }
+        data: {
+          videos: currentPlaylistData.videos,
+          currentVideoIndex: currentPlaylistData.currentVideoIndex || 1
+        }
       });
 
       if (!analysisResponse || !analysisResponse.success) {
@@ -225,6 +238,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     const channelEl = document.getElementById('playlistChannel');
     if (channelEl) channelEl.textContent = currentPlaylistData.channelName || '';
 
+    // Initialize remaining watch time card
+    const initialFromIndex = currentPlaylistData.currentVideoIndex || 1;
+    const fromVidInput = document.getElementById('fromVideoIndex');
+    const totalCountLbl = document.getElementById('totalVideosCountLabel');
+    if (fromVidInput) {
+      fromVidInput.max = currentPlaylistData.videos.length;
+      fromVidInput.value = initialFromIndex;
+    }
+    if (totalCountLbl) {
+      totalCountLbl.textContent = `of ${currentPlaylistData.videos.length}`;
+    }
+    updateRemainingStats(initialFromIndex);
+
     // Overview stats
     const totalDurationEl = document.getElementById('totalDuration');
     if (totalDurationEl) totalDurationEl.textContent = currentAnalysis.totalDuration || '--';
@@ -269,6 +295,50 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Update custom schedule
     updateCustomSchedule();
+  }
+
+  function updateRemainingStats(fromIndex) {
+    if (!currentPlaylistData || !currentPlaylistData.videos || currentPlaylistData.videos.length === 0) return;
+    const total = currentPlaylistData.videos.length;
+    fromIndex = Math.max(1, Math.min(parseInt(fromIndex, 10) || 1, total));
+
+    const fromVidInput = document.getElementById('fromVideoIndex');
+    if (fromVidInput && parseInt(fromVidInput.value, 10) !== fromIndex) {
+      fromVidInput.value = fromIndex;
+    }
+
+    const remainingVideos = currentPlaylistData.videos.slice(fromIndex - 1);
+    const remainingSeconds = remainingVideos.reduce((sum, v) => sum + (v.durationSeconds || 0), 0);
+
+    const badgeEl = document.getElementById('currentVideoBadge');
+    if (badgeEl) {
+      badgeEl.textContent = fromIndex > 1 ? `Now at Video ${fromIndex}` : `Full Playlist (${total} vids)`;
+    }
+
+    const durEl = document.getElementById('remainingDuration');
+    if (durEl) durEl.textContent = formatDuration(remainingSeconds);
+
+    const countEl = document.getElementById('remainingCount');
+    if (countEl) countEl.textContent = `${remainingVideos.length} videos left`;
+
+    const at15xEl = document.getElementById('remainingAt1_5x');
+    if (at15xEl) at15xEl.textContent = formatDuration(Math.round(remainingSeconds / 1.5));
+
+    const at2xEl = document.getElementById('remainingAt2x');
+    if (at2xEl) at2xEl.textContent = formatDuration(Math.round(remainingSeconds / 2));
+
+    updateCustomSchedule();
+    highlightCurrentVideo(fromIndex);
+  }
+
+  function highlightCurrentVideo(fromIdx) {
+    const container = document.getElementById('videosList');
+    if (!container) return;
+    container.querySelectorAll('.video-item').forEach(item => {
+      const idx = parseInt(item.dataset.index, 10);
+      item.classList.toggle('current-video', idx === fromIdx);
+      item.classList.toggle('watched-video', idx < fromIdx);
+    });
   }
 
   function renderSpeeds() {
@@ -333,21 +403,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     const container = document.getElementById('videosList');
     if (!container || !currentPlaylistData || !currentPlaylistData.videos) return;
 
+    const fromVidInput = document.getElementById('fromVideoIndex');
+    const currentFromIndex = fromVidInput ? (parseInt(fromVidInput.value, 10) || 1) : 1;
+
     const videoData = videos || currentPlaylistData.videos;
 
-    container.innerHTML = videoData.map(video => `
-      <div class="video-item ${video.isUnavailable ? 'unavailable' : ''}" 
-           data-url="${video.url || ''}" 
-           data-index="${video.index || ''}"
-           data-duration="${video.durationSeconds || 0}"
-           title="${escapeHtml(video.title || '')}">
-        <span class="video-index">${video.index || ''}</span>
-        <span class="video-title">${escapeHtml(video.title || 'Untitled')}</span>
-        <span class="video-duration">${video.durationFormatted || '--'}</span>
-      </div>
-    `).join('');
+    container.innerHTML = videoData.map(video => {
+      const idx = video.index || 0;
+      const isCurrent = idx === currentFromIndex;
+      const isWatched = idx < currentFromIndex;
+      return `
+        <div class="video-item ${video.isUnavailable ? 'unavailable' : ''} ${isCurrent ? 'current-video' : ''} ${isWatched ? 'watched-video' : ''}" 
+             data-url="${video.url || ''}" 
+             data-index="${video.index || ''}"
+             data-duration="${video.durationSeconds || 0}"
+             title="${escapeHtml(video.title || '')}">
+          <span class="video-index">${video.index || ''}</span>
+          <span class="video-title">${escapeHtml(video.title || 'Untitled')}</span>
+          <span class="video-duration">${video.durationFormatted || '--'}</span>
+        </div>
+      `;
+    }).join('');
 
-    // Click to open video
+    // Click to open video or select as starting point
     container.querySelectorAll('.video-item').forEach(item => {
       item.addEventListener('click', () => {
         const url = item.dataset.url;
@@ -388,11 +466,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function updateCustomSchedule() {
-    if (!currentAnalysis) return;
+    if (!currentAnalysis || !currentPlaylistData) return;
 
     const hours = (customHours && parseFloat(customHours.value)) || 1;
     const speed = (customSpeed && parseFloat(customSpeed.value)) || 1;
-    const adjustedSeconds = (currentAnalysis.totalSeconds || 0) / speed;
+    const scopeEl = document.getElementById('scheduleScope');
+    const scope = scopeEl ? scopeEl.value : 'remaining';
+
+    let targetSeconds = currentAnalysis.totalSeconds || 0;
+    if (scope === 'remaining') {
+      const fromVidInput = document.getElementById('fromVideoIndex');
+      const fromIdx = Math.max(1, Math.min(parseInt(fromVidInput?.value, 10) || 1, currentPlaylistData.videos.length));
+      const remVideos = currentPlaylistData.videos.slice(fromIdx - 1);
+      targetSeconds = remVideos.reduce((sum, v) => sum + (v.durationSeconds || 0), 0);
+    }
+
+    const adjustedSeconds = targetSeconds / speed;
     const days = Math.ceil(adjustedSeconds / (hours * 3600));
 
     const customDaysEl = document.getElementById('customDays');
