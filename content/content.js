@@ -42,9 +42,28 @@
     });
   }
 
+  let activeWatchMode = null; // 'video' | 'playlist' | null
+
+  function isDedicatedPlaylistPage() {
+    return window.location.pathname === '/playlist';
+  }
+
+  function isVideoWatchPage() {
+    const path = window.location.pathname;
+    return path === '/watch' || path.startsWith('/shorts/');
+  }
+
+  function hasPlaylistParam() {
+    const params = new URLSearchParams(window.location.search);
+    return !!params.get('list');
+  }
+
   function isPlaylistPage() {
-    const url = window.location.href;
-    return url.includes('list=') || url.includes('/playlist');
+    if (isDedicatedPlaylistPage()) return true;
+    if (isVideoWatchPage()) {
+      return activeWatchMode === 'playlist' && hasPlaylistParam();
+    }
+    return hasPlaylistParam();
   }
 
   function getPlaylistId() {
@@ -53,8 +72,11 @@
   }
 
   function isVideoPage() {
-    const url = window.location.href;
-    return url.includes('/watch') || url.includes('/shorts/');
+    if (isDedicatedPlaylistPage()) return false;
+    if (isVideoWatchPage()) {
+      return activeWatchMode !== 'playlist';
+    }
+    return false;
   }
 
   function getVideoMeta() {
@@ -321,7 +343,10 @@
           </svg>
           <span id="yt-pa-header-title">Playlist Analyzer</span>
         </div>
-        <button class="yt-pa-panel-close" id="yt-pa-close" title="Close" aria-label="Close">&times;</button>
+        <div class="yt-pa-header-actions">
+          <button id="yt-pa-mode-toggle" class="yt-pa-mode-toggle" style="display:none;"></button>
+          <button class="yt-pa-panel-close" id="yt-pa-close" title="Close" aria-label="Close">&times;</button>
+        </div>
       </div>
       <div class="yt-pa-top-nav" id="yt-pa-top-nav" style="display:none;">
         <div class="yt-pa-playlist-name" id="yt-pa-playlist-name"></div>
@@ -479,6 +504,19 @@
       });
     });
 
+    // Mode toggle button (for watch page with playlist)
+    const modeToggle = document.getElementById('yt-pa-mode-toggle');
+    if (modeToggle) {
+      modeToggle.addEventListener('click', () => {
+        if (activeWatchMode === 'playlist') {
+          activeWatchMode = 'video';
+        } else {
+          activeWatchMode = 'playlist';
+        }
+        runAnalysis();
+      });
+    }
+
     // Custom calculator
     const customHrs = document.getElementById('yt-pa-custom-hrs');
     const customSpd = document.getElementById('yt-pa-custom-spd');
@@ -533,6 +571,7 @@
     const videoResults = document.getElementById('yt-pa-video-results');
     const topNav = document.getElementById('yt-pa-top-nav');
     const headerTitle = document.getElementById('yt-pa-header-title');
+    const modeToggle = document.getElementById('yt-pa-mode-toggle');
 
     loading.style.display = 'flex';
     noPlaylist.style.display = 'none';
@@ -541,6 +580,16 @@
     if (topNav) topNav.style.display = 'none';
 
     stopVideoAnalyzer();
+
+    // Configure mode toggle button on /watch with playlist queue
+    if (modeToggle) {
+      if (isVideoWatchPage() && hasPlaylistParam()) {
+        modeToggle.style.display = 'inline-block';
+        modeToggle.textContent = (activeWatchMode === 'playlist') ? 'View Video ❯' : 'View Playlist ❯';
+      } else {
+        modeToggle.style.display = 'none';
+      }
+    }
 
     if (isPlaylistPage()) {
       if (headerTitle) headerTitle.textContent = 'Playlist Analyzer';
@@ -625,22 +674,52 @@
     const loading = document.getElementById('yt-pa-loading');
     const noPlaylist = document.getElementById('yt-pa-no-playlist');
     const videoResults = document.getElementById('yt-pa-video-results');
+    const results = document.getElementById('yt-pa-results');
+    const topNav = document.getElementById('yt-pa-top-nav');
+
+    if (results) results.style.display = 'none';
+    if (topNav) topNav.style.display = 'none';
 
     const video = document.querySelector('video.html5-main-video') || document.querySelector('video');
     if (!video) {
-      loading.style.display = 'none';
-      noPlaylist.style.display = 'flex';
-      noPlaylist.querySelector('p:first-of-type').textContent = 'No Video Playing';
-      noPlaylist.querySelector('p:last-of-type').textContent = 'Please play a video on YouTube.';
+      loading.style.display = 'flex';
+      noPlaylist.style.display = 'none';
+      if (videoResults) videoResults.style.display = 'none';
+
+      // Brief retry for SPA page transitions where video element takes a moment to mount
+      setTimeout(() => {
+        if (!panelOpen || !isVideoPage()) return;
+        const v = document.querySelector('video.html5-main-video') || document.querySelector('video');
+        if (v) {
+          loading.style.display = 'none';
+          if (videoResults) videoResults.style.display = 'block';
+          initVideoAnalysisDOM();
+          updateVideoAnalysisUI();
+          startVideoInterval();
+          v.addEventListener('loadedmetadata', updateVideoAnalysisUI, { once: true });
+        } else {
+          loading.style.display = 'none';
+          noPlaylist.style.display = 'flex';
+          noPlaylist.querySelector('p:first-of-type').textContent = 'No Video Playing';
+          noPlaylist.querySelector('p:last-of-type').textContent = 'Please play a video on YouTube.';
+        }
+      }, 400);
       return;
     }
 
     loading.style.display = 'none';
+    noPlaylist.style.display = 'none';
     videoResults.style.display = 'block';
 
     initVideoAnalysisDOM();
     updateVideoAnalysisUI();
+    startVideoInterval();
 
+    video.addEventListener('loadedmetadata', updateVideoAnalysisUI, { once: true });
+  }
+
+  function startVideoInterval() {
+    stopVideoAnalyzer();
     videoIntervalTimer = setInterval(() => {
       if (panelOpen && isVideoPage()) {
         updateVideoAnalysisUI();
@@ -875,33 +954,48 @@
 
   // Watch for navigation changes (YouTube is SPA)
   function watchNavigation() {
-    let lastUrl = location.href;
-    const observer = new MutationObserver(() => {
-      if (!isContextValid()) {
-        try { observer.disconnect(); } catch (e) {}
-        return;
-      }
-      const url = location.href;
-      if (url !== lastUrl) {
-        lastUrl = url;
-        // Close panel on navigation
-        if (panelOpen) {
-          panelOpen = false;
-          const panel = document.getElementById('yt-pa-panel');
-          const btn = document.getElementById('yt-playlist-analyzer-btn');
-          if (panel) panel.classList.remove('open');
-          if (btn) btn.classList.remove('active');
+    let lastTrackedUrl = window.location.href;
+
+    function handleLocationChange() {
+      if (!isContextValid()) return;
+      const currentUrl = window.location.href;
+      if (currentUrl === lastTrackedUrl) return;
+      lastTrackedUrl = currentUrl;
+
+      // Reset active mode selection and stale cache
+      activeWatchMode = null;
+      playlistData = null;
+      analysisData = null;
+      stopVideoAnalyzer();
+
+      // Ensure floating button exists
+      setTimeout(() => {
+        if (!isContextValid()) return;
+        if (!document.getElementById('yt-playlist-analyzer-btn')) {
+          injectFloatingButton();
         }
-        stopVideoAnalyzer();
-        setTimeout(() => {
-          if (!isContextValid()) return;
-          if (!document.getElementById('yt-playlist-analyzer-btn')) {
-            injectFloatingButton();
-          }
-        }, 1500);
+      }, 250);
+
+      // LIVE UPDATION:
+      // If panel is currently open, immediately re-run analysis for the new page without requiring a reload!
+      if (panelOpen) {
+        runAnalysis();
       }
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
+    }
+
+    // Native YouTube SPA navigation events
+    window.addEventListener('yt-navigate-finish', handleLocationChange);
+    document.addEventListener('yt-navigate-finish', handleLocationChange);
+    window.addEventListener('yt-page-data-updated', handleLocationChange);
+    window.addEventListener('popstate', handleLocationChange);
+
+    // Backup lightweight URL check every 500ms
+    setInterval(() => {
+      if (!isContextValid()) return;
+      if (window.location.href !== lastTrackedUrl) {
+        handleLocationChange();
+      }
+    }, 500);
   }
 
   // Watch for fullscreen mode (hide button and close panel during fullscreen video)

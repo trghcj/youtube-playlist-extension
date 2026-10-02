@@ -137,6 +137,31 @@
   flex-shrink: 0;
 }
 
+.yt-pa-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.yt-pa-mode-toggle {
+  background: #2a2a2a;
+  border: 1px solid #383838;
+  color: #CCCCCC;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.yt-pa-mode-toggle:hover {
+  background: #333333;
+  color: #FFFFFF;
+  border-color: #555555;
+}
+
 .yt-pa-panel-close {
   background: none;
   border: none;
