@@ -391,6 +391,7 @@
           <button class="yt-pa-tab active" data-tab="overview">Overview</button>
           <button class="yt-pa-tab" data-tab="speeds">Speeds</button>
           <button class="yt-pa-tab" data-tab="schedule">Schedule</button>
+          <button class="yt-pa-tab" data-tab="videos">Videos</button>
         </div>
       </div>
       <div class="yt-pa-panel-body" id="yt-pa-body">
@@ -531,6 +532,19 @@
               </div>
             </div>
           </div>
+
+          <!-- Videos Tab -->
+          <div class="yt-pa-tab-content" id="yt-pa-tc-videos">
+            <div class="yt-pa-videos-header">
+              <input type="text" id="yt-pa-video-search" class="yt-pa-search-input" placeholder="Search videos...">
+              <div class="yt-pa-sort-controls">
+                <button class="yt-pa-sort-btn active" data-sort="index">Order</button>
+                <button class="yt-pa-sort-btn" data-sort="duration-asc">Shortest</button>
+                <button class="yt-pa-sort-btn" data-sort="duration-desc">Longest</button>
+              </div>
+            </div>
+            <div id="yt-pa-videos-list" class="yt-pa-videos-list"></div>
+          </div>
         </div>
 
         <!-- Video Mode -->
@@ -603,6 +617,22 @@
     const customSpd = document.getElementById('yt-pa-custom-spd');
     if (customHrs) customHrs.addEventListener('change', updateCustomCalc);
     if (customSpd) customSpd.addEventListener('change', updateCustomCalc);
+
+    // Video search & sort in Videos tab
+    const vidSearch = document.getElementById('yt-pa-video-search');
+    if (vidSearch) {
+      vidSearch.addEventListener('input', (e) => {
+        filterInlineVideos(e.target.value);
+      });
+    }
+
+    panel.querySelectorAll('.yt-pa-sort-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        panel.querySelectorAll('.yt-pa-sort-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        sortInlineVideos(btn.dataset.sort);
+      });
+    });
   }
 
   let analysisData = null;
@@ -1009,6 +1039,7 @@
       fromVidSelect.value = initialFromIdx;
     }
     updateInlineRemaining(initialFromIdx);
+    renderInlineVideoList();
 
     updateCustomCalc();
   }
@@ -1043,6 +1074,7 @@
     const at2xEl = document.getElementById('yt-pa-rem-2x');
     if (at2xEl) at2xEl.textContent = formatDuration(Math.round(remSeconds / 2));
 
+    highlightInlineCurrentVideo(fromIdx);
     updateCustomCalc();
   }
 
@@ -1062,6 +1094,86 @@
     const days = Math.ceil((targetSeconds / spd) / (hrs * 3600));
     const el = document.getElementById('yt-pa-custom-days');
     if (el) el.textContent = `${days} day${days > 1 ? 's' : ''}`;
+  }
+
+  function renderInlineVideoList(videos = null) {
+    const container = document.getElementById('yt-pa-videos-list');
+    if (!container || !playlistData || !playlistData.videos) return;
+
+    const fromVidSelect = document.getElementById('yt-pa-from-vid-select');
+    const currentFromIndex = fromVidSelect ? (parseInt(fromVidSelect.value, 10) || 1) : (playlistData.currentVideoIndex || 1);
+
+    const videoData = videos || playlistData.videos;
+
+    container.innerHTML = videoData.map(video => {
+      const idx = video.index || 0;
+      const isCurrent = idx === currentFromIndex;
+      const isWatched = idx < currentFromIndex;
+      return `
+        <div class="yt-pa-video-item ${video.isUnavailable ? 'unavailable' : ''} ${isCurrent ? 'current-video' : ''} ${isWatched ? 'watched-video' : ''}" 
+             data-url="${video.url || ''}" 
+             data-index="${video.index || ''}"
+             data-duration="${video.durationSeconds || 0}"
+             title="${escapeHtml(video.title || '')}">
+          <span class="yt-pa-vid-item-index">${video.index || ''}</span>
+          <span class="yt-pa-vid-item-title">${escapeHtml(video.title || 'Untitled')}</span>
+          <span class="yt-pa-vid-item-duration">${video.durationFormatted || '--'}</span>
+        </div>
+      `;
+    }).join('');
+
+    container.querySelectorAll('.yt-pa-video-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const idx = parseInt(item.dataset.index, 10);
+        if (fromVidSelect && !isNaN(idx)) {
+          fromVidSelect.value = idx;
+          updateInlineRemaining(idx);
+        }
+        const url = item.dataset.url;
+        if (url) {
+          window.location.href = url;
+        }
+      });
+    });
+  }
+
+  function highlightInlineCurrentVideo(fromIdx) {
+    const container = document.getElementById('yt-pa-videos-list');
+    if (!container) return;
+    container.querySelectorAll('.yt-pa-video-item').forEach(item => {
+      const idx = parseInt(item.dataset.index, 10);
+      item.classList.toggle('current-video', idx === fromIdx);
+      item.classList.toggle('watched-video', idx < fromIdx);
+    });
+  }
+
+  function filterInlineVideos(query) {
+    if (!playlistData || !playlistData.videos) return;
+    const filtered = query
+      ? playlistData.videos.filter(v =>
+          (v.title || '').toLowerCase().includes(query.toLowerCase()))
+      : playlistData.videos;
+    renderInlineVideoList(filtered);
+  }
+
+  function sortInlineVideos(sortType) {
+    if (!playlistData || !playlistData.videos) return;
+    let sorted = [...playlistData.videos];
+
+    switch (sortType) {
+      case 'duration-asc':
+        sorted.sort((a, b) => (a.durationSeconds || 0) - (b.durationSeconds || 0));
+        break;
+      case 'duration-desc':
+        sorted.sort((a, b) => (b.durationSeconds || 0) - (a.durationSeconds || 0));
+        break;
+      case 'index':
+      default:
+        sorted.sort((a, b) => (a.index || 0) - (b.index || 0));
+        break;
+    }
+
+    renderInlineVideoList(sorted);
   }
 
   // ===== FLOATING BUTTON =====
