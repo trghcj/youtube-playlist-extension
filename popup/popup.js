@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const statusTextEl = document.getElementById('statusText');
   const notPlaylistEl = document.getElementById('notPlaylist');
   const errorStateEl = document.getElementById('errorState');
+  const errorTitleEl = document.getElementById('errorTitle');
   const errorTextEl = document.getElementById('errorText');
   const mainContentEl = document.getElementById('mainContent');
   const retryBtn = document.getElementById('retryBtn');
@@ -25,48 +26,59 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
       tab.classList.add('active');
-      document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
+      const targetContent = document.getElementById(`tab-${tab.dataset.tab}`);
+      if (targetContent) targetContent.classList.add('active');
     });
   });
 
   // Panel navigation
-  historyBtn.addEventListener('click', () => {
-    historyPanel.classList.toggle('hidden');
-    settingsPanel.classList.add('hidden');
-    if (!historyPanel.classList.contains('hidden')) loadHistory();
-  });
+  if (historyBtn) {
+    historyBtn.addEventListener('click', () => {
+      if (historyPanel) historyPanel.classList.toggle('hidden');
+      if (settingsPanel) settingsPanel.classList.add('hidden');
+      if (historyPanel && !historyPanel.classList.contains('hidden')) loadHistory();
+    });
+  }
 
-  settingsBtn.addEventListener('click', () => {
-    settingsPanel.classList.toggle('hidden');
-    historyPanel.classList.add('hidden');
-  });
+  if (settingsBtn) {
+    settingsBtn.addEventListener('click', () => {
+      if (settingsPanel) settingsPanel.classList.toggle('hidden');
+      if (historyPanel) historyPanel.classList.add('hidden');
+    });
+  }
 
   document.querySelectorAll('.panel-close').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.getElementById(btn.dataset.close).classList.add('hidden');
+      const target = document.getElementById(btn.dataset.close);
+      if (target) target.classList.add('hidden');
     });
   });
 
-  // Retry button
-  retryBtn.addEventListener('click', () => startAnalysis());
-  analyzeBtn.addEventListener('click', () => startAnalysis());
+  // Retry & Re-analyze buttons
+  if (retryBtn) retryBtn.addEventListener('click', () => startAnalysis());
+  if (analyzeBtn) analyzeBtn.addEventListener('click', () => startAnalysis());
 
   // Clear history
-  clearHistoryBtn.addEventListener('click', async () => {
-    await chrome.runtime.sendMessage({ type: 'CLEAR_HISTORY' });
-    loadHistory();
-  });
+  if (clearHistoryBtn) {
+    clearHistoryBtn.addEventListener('click', async () => {
+      await chrome.runtime.sendMessage({ type: 'CLEAR_HISTORY' });
+      loadHistory();
+    });
+  }
 
   // Custom schedule calculator
   const customHours = document.getElementById('customHours');
   const customSpeed = document.getElementById('customSpeed');
-  customHours.addEventListener('input', updateCustomSchedule);
-  customSpeed.addEventListener('change', updateCustomSchedule);
+  if (customHours) customHours.addEventListener('input', updateCustomSchedule);
+  if (customSpeed) customSpeed.addEventListener('change', updateCustomSchedule);
 
   // Video search
-  document.getElementById('videoSearch').addEventListener('input', (e) => {
-    filterVideos(e.target.value);
-  });
+  const videoSearchEl = document.getElementById('videoSearch');
+  if (videoSearchEl) {
+    videoSearchEl.addEventListener('input', (e) => {
+      filterVideos(e.target.value);
+    });
+  }
 
   // Sort buttons
   document.querySelectorAll('.sort-btn').forEach(btn => {
@@ -79,17 +91,28 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Settings persistence
   loadSettings();
-  document.getElementById('defaultSpeed').addEventListener('change', saveSettings);
-  document.getElementById('autoAnalyze').addEventListener('change', saveSettings);
-  document.getElementById('showFloatingBtn').addEventListener('change', saveSettings);
-  document.getElementById('saveHistory').addEventListener('change', saveSettings);
+  const defSpeedEl = document.getElementById('defaultSpeed');
+  if (defSpeedEl) defSpeedEl.addEventListener('change', saveSettings);
+  const autoAnEl = document.getElementById('autoAnalyze');
+  if (autoAnEl) autoAnEl.addEventListener('change', saveSettings);
+  const showBtnEl = document.getElementById('showFloatingBtn');
+  if (showBtnEl) showBtnEl.addEventListener('change', saveSettings);
+  const saveHistEl = document.getElementById('saveHistory');
+  if (saveHistEl) saveHistEl.addEventListener('change', saveSettings);
 
   // Start analysis automatically
   startAnalysis();
 
   async function startAnalysis() {
+    // Reset retry button to default behavior
+    if (retryBtn) {
+      retryBtn.textContent = 'Try Again';
+      retryBtn.onclick = () => startAnalysis();
+    }
+    if (errorTitleEl) errorTitleEl.textContent = 'Oops!';
+
     showView('status');
-    statusTextEl.textContent = 'Checking page...';
+    if (statusTextEl) statusTextEl.textContent = 'Checking page...';
 
     try {
       // Check if current tab is a YouTube playlist
@@ -105,17 +128,37 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      statusTextEl.textContent = 'Extracting playlist data...';
+      if (statusTextEl) statusTextEl.textContent = 'Extracting playlist data...';
 
-      // Request data from content script
-      const response = await chrome.tabs.sendMessage(tab.id, { type: 'EXTRACT_PLAYLIST_DATA' });
+      // Request data from content script with graceful connection handling
+      let response;
+      try {
+        response = await chrome.tabs.sendMessage(tab.id, { type: 'EXTRACT_PLAYLIST_DATA' });
+      } catch (connErr) {
+        // Tab was open before extension was installed or reloaded
+        console.warn('Content script not yet connected to tab:', connErr?.message);
+        if (errorTitleEl) errorTitleEl.textContent = 'Refresh Required';
+        if (errorTextEl) errorTextEl.textContent = 'Please refresh this YouTube page (F5) once so the extension can connect.';
+        if (retryBtn) {
+          retryBtn.textContent = 'Refresh YouTube Page';
+          retryBtn.onclick = async () => {
+            if (tab && tab.id) {
+              await chrome.tabs.reload(tab.id);
+            }
+            window.close();
+          };
+        }
+        showView('error');
+        return;
+      }
 
       if (!response || !response.success) {
         throw new Error(response?.error || 'Failed to extract playlist data');
       }
 
       currentPlaylistData = response.data;
-      statusTextEl.textContent = `Analyzing ${currentPlaylistData.videos.length} videos...`;
+      const count = currentPlaylistData && currentPlaylistData.videos ? currentPlaylistData.videos.length : 0;
+      if (statusTextEl) statusTextEl.textContent = `Analyzing ${count} videos...`;
 
       // Send to background for analysis
       const analysisResponse = await chrome.runtime.sendMessage({
@@ -130,7 +173,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       currentAnalysis = analysisResponse.data;
 
       // Save to history
-      const saveHistoryEnabled = document.getElementById('saveHistory').checked;
+      const saveHistoryEl = document.getElementById('saveHistory');
+      const saveHistoryEnabled = saveHistoryEl ? saveHistoryEl.checked : true;
       if (saveHistoryEnabled) {
         chrome.runtime.sendMessage({
           type: 'SAVE_HISTORY',
@@ -149,23 +193,25 @@ document.addEventListener('DOMContentLoaded', async () => {
       showView('main');
 
     } catch (error) {
-      console.error('Analysis error:', error);
-      errorTextEl.textContent = error.message || 'Something went wrong. Make sure you\'re on a YouTube playlist page.';
+      console.warn('Analysis error handled:', error);
+      if (errorTextEl) {
+        errorTextEl.textContent = error.message || 'Something went wrong. Make sure you\'re on a YouTube playlist page.';
+      }
       showView('error');
     }
   }
 
   function showView(view) {
-    statusEl.classList.add('hidden');
-    notPlaylistEl.classList.add('hidden');
-    errorStateEl.classList.add('hidden');
-    mainContentEl.classList.add('hidden');
+    if (statusEl) statusEl.classList.add('hidden');
+    if (notPlaylistEl) notPlaylistEl.classList.add('hidden');
+    if (errorStateEl) errorStateEl.classList.add('hidden');
+    if (mainContentEl) mainContentEl.classList.add('hidden');
 
     switch (view) {
-      case 'status': statusEl.classList.remove('hidden'); break;
-      case 'notPlaylist': notPlaylistEl.classList.remove('hidden'); break;
-      case 'error': errorStateEl.classList.remove('hidden'); break;
-      case 'main': mainContentEl.classList.remove('hidden'); break;
+      case 'status': if (statusEl) statusEl.classList.remove('hidden'); break;
+      case 'notPlaylist': if (notPlaylistEl) notPlaylistEl.classList.remove('hidden'); break;
+      case 'error': if (errorStateEl) errorStateEl.classList.remove('hidden'); break;
+      case 'main': if (mainContentEl) mainContentEl.classList.remove('hidden'); break;
     }
   }
 
@@ -173,27 +219,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!currentAnalysis || !currentPlaylistData) return;
 
     // Playlist info
-    document.getElementById('playlistTitle').textContent = currentPlaylistData.playlistTitle;
-    document.getElementById('playlistChannel').textContent = currentPlaylistData.channelName || '';
+    const titleEl = document.getElementById('playlistTitle');
+    if (titleEl) titleEl.textContent = currentPlaylistData.playlistTitle || 'YouTube Playlist';
+
+    const channelEl = document.getElementById('playlistChannel');
+    if (channelEl) channelEl.textContent = currentPlaylistData.channelName || '';
 
     // Overview stats
-    document.getElementById('totalDuration').textContent = currentAnalysis.totalDuration;
-    document.getElementById('totalVideos').textContent = currentAnalysis.totalVideos;
-    document.getElementById('avgDuration').textContent = currentAnalysis.averageDuration;
+    const totalDurationEl = document.getElementById('totalDuration');
+    if (totalDurationEl) totalDurationEl.textContent = currentAnalysis.totalDuration || '--';
 
-    const at2x = currentAnalysis.speedAnalysis.find(s => s.speed === 2);
-    document.getElementById('at2xDuration').textContent = at2x ? at2x.formatted : '--';
+    const totalVideosEl = document.getElementById('totalVideos');
+    if (totalVideosEl) totalVideosEl.textContent = currentAnalysis.totalVideos ?? '--';
+
+    const avgDurationEl = document.getElementById('avgDuration');
+    if (avgDurationEl) avgDurationEl.textContent = currentAnalysis.averageDuration || '--';
+
+    const at2x = (currentAnalysis.speedAnalysis || []).find(s => s.speed === 2);
+    const at2xDurationEl = document.getElementById('at2xDuration');
+    if (at2xDurationEl) at2xDurationEl.textContent = at2x ? at2x.formatted : '--';
 
     // Quick stats
-    document.getElementById('shortestVideo').textContent = currentAnalysis.shortest
-      ? `${currentAnalysis.shortest.duration} - ${truncate(currentAnalysis.shortest.title, 30)}`
-      : '--';
-    document.getElementById('longestVideo').textContent = currentAnalysis.longest
-      ? `${currentAnalysis.longest.duration} - ${truncate(currentAnalysis.longest.title, 30)}`
-      : '--';
+    const shortestVideoEl = document.getElementById('shortestVideo');
+    if (shortestVideoEl) {
+      shortestVideoEl.textContent = currentAnalysis.shortest
+        ? `${currentAnalysis.shortest.duration} - ${truncate(currentAnalysis.shortest.title, 30)}`
+        : '--';
+    }
 
-    const unavailable = currentPlaylistData.videos.filter(v => v.isUnavailable).length;
-    document.getElementById('unavailableCount').textContent = unavailable > 0 ? `${unavailable} videos` : 'None';
+    const longestVideoEl = document.getElementById('longestVideo');
+    if (longestVideoEl) {
+      longestVideoEl.textContent = currentAnalysis.longest
+        ? `${currentAnalysis.longest.duration} - ${truncate(currentAnalysis.longest.title, 30)}`
+        : '--';
+    }
+
+    const unavailable = ((currentPlaylistData.videos) || []).filter(v => v.isUnavailable).length;
+    const unavailableCountEl = document.getElementById('unavailableCount');
+    if (unavailableCountEl) unavailableCountEl.textContent = unavailable > 0 ? `${unavailable} videos` : 'None';
 
     // Speeds tab
     renderSpeeds();
@@ -211,10 +274,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   function renderSpeeds() {
     const container = document.getElementById('speedsList');
     const timeSavedContainer = document.getElementById('timeSaved');
-    const totalSeconds = currentAnalysis.totalSeconds;
+    if (!container || !currentAnalysis || !currentAnalysis.speedAnalysis) return;
+
+    const totalSeconds = currentAnalysis.totalSeconds || 0;
 
     container.innerHTML = currentAnalysis.speedAnalysis.map(item => {
-      const percentage = (item.totalSeconds / totalSeconds) * 100;
+      const percentage = totalSeconds > 0 ? (item.totalSeconds / totalSeconds) * 100 : 0;
       const isRecommended = item.speed === 1.5;
       return `
         <div class="speed-item ${isRecommended ? 'recommended' : ''}">
@@ -228,20 +293,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     }).join('');
 
     // Time saved calculations
-    const speedsToShow = [1.25, 1.5, 2, 3];
-    timeSavedContainer.innerHTML = speedsToShow.map(speed => {
-      const saved = totalSeconds - Math.round(totalSeconds / speed);
-      return `
-        <div class="time-saved-item">
-          <div class="time-saved-speed">At ${speed}x</div>
-          <div class="time-saved-value">${formatDuration(saved)}</div>
-        </div>
-      `;
-    }).join('');
+    if (timeSavedContainer) {
+      const speedsToShow = [1.25, 1.5, 2, 3];
+      timeSavedContainer.innerHTML = speedsToShow.map(speed => {
+        const saved = totalSeconds - Math.round(totalSeconds / speed);
+        return `
+          <div class="time-saved-item">
+            <div class="time-saved-speed">At ${speed}x</div>
+            <div class="time-saved-value">${formatDuration(saved)}</div>
+          </div>
+        `;
+      }).join('');
+    }
   }
 
   function renderSchedule() {
     const container = document.getElementById('scheduleList');
+    if (!container || !currentAnalysis || !currentAnalysis.dailySchedules) return;
 
     container.innerHTML = `
       <div class="schedule-item header">
@@ -263,17 +331,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function renderVideoList(videos = null) {
     const container = document.getElementById('videosList');
+    if (!container || !currentPlaylistData || !currentPlaylistData.videos) return;
+
     const videoData = videos || currentPlaylistData.videos;
 
     container.innerHTML = videoData.map(video => `
       <div class="video-item ${video.isUnavailable ? 'unavailable' : ''}" 
-           data-url="${video.url}" 
-           data-index="${video.index}"
-           data-duration="${video.durationSeconds}"
-           title="${escapeHtml(video.title)}">
-        <span class="video-index">${video.index}</span>
-        <span class="video-title">${escapeHtml(video.title)}</span>
-        <span class="video-duration">${video.durationFormatted}</span>
+           data-url="${video.url || ''}" 
+           data-index="${video.index || ''}"
+           data-duration="${video.durationSeconds || 0}"
+           title="${escapeHtml(video.title || '')}">
+        <span class="video-index">${video.index || ''}</span>
+        <span class="video-title">${escapeHtml(video.title || 'Untitled')}</span>
+        <span class="video-duration">${video.durationFormatted || '--'}</span>
       </div>
     `).join('');
 
@@ -289,28 +359,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function filterVideos(query) {
-    if (!currentPlaylistData) return;
+    if (!currentPlaylistData || !currentPlaylistData.videos) return;
     const filtered = query
       ? currentPlaylistData.videos.filter(v =>
-          v.title.toLowerCase().includes(query.toLowerCase()))
+          (v.title || '').toLowerCase().includes(query.toLowerCase()))
       : currentPlaylistData.videos;
     renderVideoList(filtered);
   }
 
   function sortVideos(sortType) {
-    if (!currentPlaylistData) return;
+    if (!currentPlaylistData || !currentPlaylistData.videos) return;
     let sorted = [...currentPlaylistData.videos];
 
     switch (sortType) {
       case 'duration-asc':
-        sorted.sort((a, b) => a.durationSeconds - b.durationSeconds);
+        sorted.sort((a, b) => (a.durationSeconds || 0) - (b.durationSeconds || 0));
         break;
       case 'duration-desc':
-        sorted.sort((a, b) => b.durationSeconds - a.durationSeconds);
+        sorted.sort((a, b) => (b.durationSeconds || 0) - (a.durationSeconds || 0));
         break;
       case 'index':
       default:
-        sorted.sort((a, b) => a.index - b.index);
+        sorted.sort((a, b) => (a.index || 0) - (b.index || 0));
         break;
     }
 
@@ -320,59 +390,86 @@ document.addEventListener('DOMContentLoaded', async () => {
   function updateCustomSchedule() {
     if (!currentAnalysis) return;
 
-    const hours = parseFloat(customHours.value) || 1;
-    const speed = parseFloat(customSpeed.value) || 1;
-    const adjustedSeconds = currentAnalysis.totalSeconds / speed;
+    const hours = (customHours && parseFloat(customHours.value)) || 1;
+    const speed = (customSpeed && parseFloat(customSpeed.value)) || 1;
+    const adjustedSeconds = (currentAnalysis.totalSeconds || 0) / speed;
     const days = Math.ceil(adjustedSeconds / (hours * 3600));
 
-    document.getElementById('customDays').textContent = days;
+    const customDaysEl = document.getElementById('customDays');
+    if (customDaysEl) {
+      customDaysEl.textContent = isFinite(days) ? days : '--';
+    }
   }
 
   async function loadHistory() {
-    const response = await chrome.runtime.sendMessage({ type: 'GET_HISTORY' });
     const historyList = document.getElementById('historyList');
+    if (!historyList) return;
 
-    if (!response.success || !response.data || response.data.length === 0) {
-      historyList.innerHTML = '<p class="empty-text">No playlists analyzed yet</p>';
-      return;
-    }
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'GET_HISTORY' });
 
-    historyList.innerHTML = response.data.map(item => `
-      <div class="history-item" data-url="${item.playlistUrl}">
-        <div class="history-title">${escapeHtml(item.playlistTitle)}</div>
-        <div class="history-meta">
-          <span>${item.totalVideos} videos</span>
-          <span>${item.totalDuration}</span>
-          <span>${new Date(item.analyzedAt).toLocaleDateString()}</span>
+      if (!response || !response.success || !response.data || response.data.length === 0) {
+        historyList.innerHTML = '<p class="empty-text">No playlists analyzed yet</p>';
+        return;
+      }
+
+      historyList.innerHTML = response.data.map(item => `
+        <div class="history-item" data-url="${item.playlistUrl}">
+          <div class="history-title">${escapeHtml(item.playlistTitle || 'Playlist')}</div>
+          <div class="history-meta">
+            <span>${item.totalVideos} videos</span>
+            <span>${item.totalDuration}</span>
+            <span>${new Date(item.analyzedAt).toLocaleDateString()}</span>
+          </div>
         </div>
-      </div>
-    `).join('');
+      `).join('');
 
-    historyList.querySelectorAll('.history-item').forEach(item => {
-      item.addEventListener('click', () => {
-        chrome.tabs.create({ url: item.dataset.url });
+      historyList.querySelectorAll('.history-item').forEach(item => {
+        item.addEventListener('click', () => {
+          chrome.tabs.create({ url: item.dataset.url });
+        });
       });
-    });
+    } catch (e) {
+      console.warn('Failed to load history:', e);
+      historyList.innerHTML = '<p class="empty-text">Failed to load history</p>';
+    }
   }
 
   async function loadSettings() {
-    const result = await chrome.storage.local.get('settings');
-    const settings = result.settings || {};
+    try {
+      const result = await chrome.storage.local.get('settings');
+      const settings = result.settings || {};
 
-    if (settings.defaultSpeed) document.getElementById('defaultSpeed').value = settings.defaultSpeed;
-    if (settings.autoAnalyze !== undefined) document.getElementById('autoAnalyze').checked = settings.autoAnalyze;
-    if (settings.showFloatingBtn !== undefined) document.getElementById('showFloatingBtn').checked = settings.showFloatingBtn;
-    if (settings.saveHistory !== undefined) document.getElementById('saveHistory').checked = settings.saveHistory;
+      const defSpeedEl = document.getElementById('defaultSpeed');
+      if (defSpeedEl && settings.defaultSpeed) defSpeedEl.value = settings.defaultSpeed;
+      const autoAnEl = document.getElementById('autoAnalyze');
+      if (autoAnEl && settings.autoAnalyze !== undefined) autoAnEl.checked = settings.autoAnalyze;
+      const showBtnEl = document.getElementById('showFloatingBtn');
+      if (showBtnEl && settings.showFloatingBtn !== undefined) showBtnEl.checked = settings.showFloatingBtn;
+      const saveHistEl = document.getElementById('saveHistory');
+      if (saveHistEl && settings.saveHistory !== undefined) saveHistEl.checked = settings.saveHistory;
+    } catch (e) {
+      console.warn('Failed to load settings:', e);
+    }
   }
 
   async function saveSettings() {
-    const settings = {
-      defaultSpeed: document.getElementById('defaultSpeed').value,
-      autoAnalyze: document.getElementById('autoAnalyze').checked,
-      showFloatingBtn: document.getElementById('showFloatingBtn').checked,
-      saveHistory: document.getElementById('saveHistory').checked
-    };
-    await chrome.storage.local.set({ settings });
+    try {
+      const defSpeedEl = document.getElementById('defaultSpeed');
+      const autoAnEl = document.getElementById('autoAnalyze');
+      const showBtnEl = document.getElementById('showFloatingBtn');
+      const saveHistEl = document.getElementById('saveHistory');
+
+      const settings = {
+        defaultSpeed: defSpeedEl ? defSpeedEl.value : '1.5',
+        autoAnalyze: autoAnEl ? autoAnEl.checked : true,
+        showFloatingBtn: showBtnEl ? showBtnEl.checked : true,
+        saveHistory: saveHistEl ? saveHistEl.checked : true
+      };
+      await chrome.storage.local.set({ settings });
+    } catch (e) {
+      console.warn('Failed to save settings:', e);
+    }
   }
 
   function formatDuration(totalSeconds) {
@@ -391,11 +488,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function truncate(str, length) {
+    if (!str) return '';
     if (str.length <= length) return str;
     return str.substring(0, length) + '...';
   }
 
   function escapeHtml(str) {
+    if (!str) return '';
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
