@@ -297,6 +297,17 @@
 
   let panelOpen = false;
 
+  function escapeHtml(text) {
+    if (!text) return '';
+    return String(text).replace(/[&<>"']/g, m => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;'
+    })[m]);
+  }
+
   function createPanel() {
     if (document.getElementById('yt-pa-panel')) return;
 
@@ -305,12 +316,12 @@
     panel.innerHTML = `
       <div class="yt-pa-panel-header">
         <div class="yt-pa-panel-title">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="#FF0000">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="#FF0000">
             <path d="M21.58 7.19c-.23-.86-.91-1.54-1.77-1.77C18.25 5 12 5 12 5s-6.25 0-7.81.42c-.86.23-1.54.91-1.77 1.77C2 8.75 2 12 2 12s0 3.25.42 4.81c.23.86.91 1.54 1.77 1.77C5.75 19 12 19 12 19s6.25 0 7.81-.42c.86-.23 1.54-.91 1.77-1.77C22 15.25 22 12 22 12s0-3.25-.42-4.81zM10 15V9l5.2 3-5.2 3z"/>
           </svg>
           <span id="yt-pa-header-title">Playlist Analyzer</span>
         </div>
-        <button class="yt-pa-panel-close" id="yt-pa-close" title="Close">&times;</button>
+        <button class="yt-pa-panel-close" id="yt-pa-close" title="Close" aria-label="Close">&times;</button>
       </div>
       <div class="yt-pa-top-nav" id="yt-pa-top-nav" style="display:none;">
         <div class="yt-pa-playlist-name" id="yt-pa-playlist-name"></div>
@@ -326,63 +337,67 @@
           <p>Analyzing playlist...</p>
         </div>
         <div class="yt-pa-no-playlist" id="yt-pa-no-playlist" style="display:none;">
-          <svg viewBox="0 0 24 24" width="40" height="40" fill="#666">
+          <svg viewBox="0 0 24 24" width="36" height="36" fill="#717171">
             <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/>
           </svg>
-          <p style="font-size:14px;font-weight:600;margin-top:8px;">No Playlist Found</p>
-          <p style="font-size:12px;color:#888;margin-top:4px;">Navigate to a YouTube playlist to analyze it.</p>
+          <p class="yt-pa-state-title">No Playlist Found</p>
+          <p class="yt-pa-state-sub">Open any YouTube playlist or video to analyze.</p>
         </div>
         <div class="yt-pa-results" id="yt-pa-results" style="display:none;">
 
           <!-- Overview Tab -->
           <div class="yt-pa-tab-content active" id="yt-pa-tc-overview">
-            <div class="yt-pa-overview-list">
+            <div class="yt-pa-ov-list">
               <div class="yt-pa-ov-row">
-                <span class="yt-pa-ov-label">Total Duration</span>
-                <span class="yt-pa-ov-value yt-pa-ov-main" id="yt-pa-total-dur">--</span>
+                <span class="yt-pa-ov-label">Total duration</span>
+                <span class="yt-pa-ov-val" id="yt-pa-total-dur">--</span>
               </div>
               <div class="yt-pa-ov-row">
                 <span class="yt-pa-ov-label">Videos</span>
-                <span class="yt-pa-ov-value" id="yt-pa-total-vids">--</span>
+                <span class="yt-pa-ov-val" id="yt-pa-total-vids">--</span>
               </div>
               <div class="yt-pa-ov-row">
-                <span class="yt-pa-ov-label">Avg. Length</span>
-                <span class="yt-pa-ov-value" id="yt-pa-avg-dur">--</span>
+                <span class="yt-pa-ov-label">Average length</span>
+                <span class="yt-pa-ov-val" id="yt-pa-avg-dur">--</span>
               </div>
               <div class="yt-pa-ov-row">
-                <span class="yt-pa-ov-label">At 2x Speed</span>
-                <span class="yt-pa-ov-value yt-pa-ov-accent" id="yt-pa-2x-dur">--</span>
+                <span class="yt-pa-ov-label">At 2×</span>
+                <span class="yt-pa-ov-val" id="yt-pa-2x-dur">--</span>
               </div>
-              <div class="yt-pa-ov-row">
-                <span class="yt-pa-ov-label">Shortest</span>
-                <span class="yt-pa-ov-value yt-pa-ov-small" id="yt-pa-shortest">--</span>
+            </div>
+            <div class="yt-pa-divider"></div>
+            <div class="yt-pa-ov-extremes">
+              <div class="yt-pa-ov-ext-block">
+                <div class="yt-pa-ov-ext-heading">Shortest</div>
+                <div class="yt-pa-ov-ext-row" id="yt-pa-shortest">--</div>
               </div>
-              <div class="yt-pa-ov-row">
-                <span class="yt-pa-ov-label">Longest</span>
-                <span class="yt-pa-ov-value yt-pa-ov-small" id="yt-pa-longest">--</span>
+              <div class="yt-pa-ov-ext-block">
+                <div class="yt-pa-ov-ext-heading">Longest</div>
+                <div class="yt-pa-ov-ext-row" id="yt-pa-longest">--</div>
               </div>
             </div>
           </div>
 
           <!-- Speeds Tab -->
           <div class="yt-pa-tab-content" id="yt-pa-tc-speeds">
-            <div id="yt-pa-speeds-list"></div>
-            <div class="yt-pa-time-saved">
-              <div class="yt-pa-ts-title">Time You Save</div>
-              <div id="yt-pa-time-saved-grid" class="yt-pa-ts-grid"></div>
+            <div class="yt-pa-speeds-list" id="yt-pa-speeds-list"></div>
+            <div class="yt-pa-divider"></div>
+            <div class="yt-pa-ts-section">
+              <div class="yt-pa-section-heading">Time saved</div>
+              <div id="yt-pa-time-saved-grid" class="yt-pa-ts-list"></div>
             </div>
           </div>
 
           <!-- Schedule Tab -->
           <div class="yt-pa-tab-content" id="yt-pa-tc-schedule">
-            <div id="yt-pa-schedule-list"></div>
-            <div class="yt-pa-cc-divider"></div>
+            <div class="yt-pa-schedule-table" id="yt-pa-schedule-list"></div>
+            <div class="yt-pa-divider"></div>
             <div class="yt-pa-custom-calc">
-              <div class="yt-pa-cc-title">Custom Calculator</div>
-              <div class="yt-pa-cc-row">
-                <div class="yt-pa-cc-input">
-                  <label>Hours/day</label>
-                  <select id="yt-pa-custom-hrs">
+              <div class="yt-pa-section-heading">Custom calculator</div>
+              <div class="yt-pa-cc-grid">
+                <div class="yt-pa-cc-field">
+                  <label class="yt-pa-field-label">Watch time</label>
+                  <select id="yt-pa-custom-hrs" class="yt-pa-select">
                     <option value="1" selected>1 hour</option>
                     <option value="2">2 hours</option>
                     <option value="3">3 hours</option>
@@ -401,29 +416,32 @@
                     <option value="24">24 hours</option>
                   </select>
                 </div>
-                <div class="yt-pa-cc-input">
-                  <label>Speed</label>
-                  <select id="yt-pa-custom-spd">
-                    <option value="1">1x</option>
-                    <option value="1.25">1.25x</option>
-                    <option value="1.5" selected>1.5x</option>
-                    <option value="1.75">1.75x</option>
-                    <option value="2">2x</option>
-                    <option value="3">3x</option>
+                <div class="yt-pa-cc-field">
+                  <label class="yt-pa-field-label">Playback speed</label>
+                  <select id="yt-pa-custom-spd" class="yt-pa-select">
+                    <option value="1">1×</option>
+                    <option value="1.25">1.25×</option>
+                    <option value="1.5" selected>1.5×</option>
+                    <option value="1.75">1.75×</option>
+                    <option value="2">2×</option>
+                    <option value="3">3×</option>
                   </select>
                 </div>
               </div>
               <div class="yt-pa-cc-result">
-                <span id="yt-pa-custom-days" class="yt-pa-cc-days">--</span>
-                <span>days to complete</span>
+                <span>Result: You'll finish in </span><span id="yt-pa-custom-days" class="yt-pa-cc-days-val">--</span>
               </div>
             </div>
           </div>
         </div>
+
+        <!-- Video Mode -->
         <div class="yt-pa-video-results" id="yt-pa-video-results" style="display:none;">
-          <div class="yt-pa-vid-card">
-            <div class="yt-pa-vid-title" id="yt-pa-vid-title">Loading video...</div>
+          <div class="yt-pa-vid-meta">
+            <div class="yt-pa-vid-title" id="yt-pa-vid-title">--</div>
             <div class="yt-pa-vid-channel" id="yt-pa-vid-channel"></div>
+          </div>
+          <div class="yt-pa-vid-progress-block">
             <div class="yt-pa-vid-progress-bar-bg">
               <div class="yt-pa-vid-progress-bar-fill" id="yt-pa-vid-progress-fill" style="width:0%"></div>
             </div>
@@ -431,20 +449,18 @@
               <span id="yt-pa-vid-current">0:00</span>
               <span id="yt-pa-vid-total">0:00</span>
             </div>
-            <div class="yt-pa-vid-finish-badge">
-              <span class="yt-pa-finish-label">Estimated Finish</span>
-              <span class="yt-pa-finish-time" id="yt-pa-vid-end-clock">--:--</span>
-              <span class="yt-pa-finish-sub" id="yt-pa-vid-remain-text">-- left</span>
-            </div>
           </div>
-
-          <div class="yt-pa-vid-section-title">Speed & Finish Time</div>
+          <div class="yt-pa-vid-finish-row">
+            <span class="yt-pa-vid-finish-label">Estimated finish</span>
+            <span class="yt-pa-vid-finish-time" id="yt-pa-vid-end-clock">--:--</span>
+            <span class="yt-pa-vid-finish-sub" id="yt-pa-vid-remain-text">--</span>
+          </div>
+          <div class="yt-pa-divider"></div>
+          <div class="yt-pa-section-heading">Speed & finish time</div>
           <div class="yt-pa-vid-speeds-table" id="yt-pa-vid-speeds-table"></div>
-
-          <div class="yt-pa-time-saved" style="margin-top: 14px;">
-            <div class="yt-pa-ts-title">Time You Save</div>
-            <div class="yt-pa-ts-grid" id="yt-pa-vid-time-saved-grid"></div>
-          </div>
+          <div class="yt-pa-divider"></div>
+          <div class="yt-pa-section-heading">Time saved</div>
+          <div class="yt-pa-ts-list" id="yt-pa-vid-time-saved-grid"></div>
         </div>
       </div>
     `;
@@ -642,15 +658,10 @@
     if (speedsTable && !speedsTable.hasChildNodes()) {
       speedsTable.innerHTML = speeds.map(sp => `
         <div class="yt-pa-vid-speed-row" data-speed="${sp}">
-          <div class="yt-pa-vid-speed-left">
-            <span class="yt-pa-vid-speed-badge">${sp}x</span>
-            <span class="yt-pa-vid-speed-status"></span>
-          </div>
-          <div class="yt-pa-vid-speed-center">
-            <span class="yt-pa-vid-speed-time">--</span>
-            <span class="yt-pa-vid-speed-finish">--</span>
-          </div>
-          <button class="yt-pa-vid-set-speed-btn" data-speed="${sp}">Set ${sp}x</button>
+          <span class="yt-pa-vid-speed-label">${sp}×</span>
+          <span class="yt-pa-vid-speed-time">--</span>
+          <span class="yt-pa-vid-speed-finish">--</span>
+          <button class="yt-pa-vid-set-speed-btn" data-speed="${sp}">Set ${sp}×</button>
         </div>
       `).join('');
 
@@ -669,9 +680,9 @@
 
     if (tsGrid && !tsGrid.hasChildNodes()) {
       tsGrid.innerHTML = [1.25, 1.5, 2, 3].map(sp => `
-        <div class="yt-pa-ts-item" data-speed="${sp}">
-          <div class="yt-pa-ts-speed">At ${sp}x</div>
-          <div class="yt-pa-ts-value">--</div>
+        <div class="yt-pa-ts-row" data-speed="${sp}">
+          <span class="yt-pa-ts-label">At ${sp}×</span>
+          <span class="yt-pa-ts-val">--</span>
         </div>
       `).join('');
     }
@@ -711,7 +722,7 @@
     const clockEl = document.getElementById('yt-pa-vid-end-clock');
     const remainEl = document.getElementById('yt-pa-vid-remain-text');
     if (clockEl) clockEl.textContent = endClockStr;
-    if (remainEl) remainEl.textContent = `${formatDuration(Math.round(adjustedRemaining))} left (${currentSpeed}x)`;
+    if (remainEl) remainEl.textContent = `${formatDuration(Math.round(adjustedRemaining))} left (${currentSpeed}×)`;
 
     // Update speeds table text only
     const speedsTable = document.getElementById('yt-pa-vid-speeds-table');
@@ -724,11 +735,6 @@
         const isCurrent = Math.abs(currentSpeed - sp) < 0.05;
 
         row.classList.toggle('active', isCurrent);
-        const statusEl = row.querySelector('.yt-pa-vid-speed-status');
-        if (statusEl) statusEl.textContent = isCurrent ? 'Active' : '';
-
-        const badgeEl = row.querySelector('.yt-pa-vid-speed-badge');
-        if (badgeEl) badgeEl.classList.toggle('current', isCurrent);
 
         const timeEl = row.querySelector('.yt-pa-vid-speed-time');
         if (timeEl) timeEl.textContent = `${formatDuration(Math.round(spRemaining))} left`;
@@ -739,7 +745,7 @@
         const btnEl = row.querySelector('.yt-pa-vid-set-speed-btn');
         if (btnEl) {
           btnEl.classList.toggle('active', isCurrent);
-          btnEl.textContent = isCurrent ? 'Current' : `Set ${sp}x`;
+          btnEl.textContent = isCurrent ? 'Active' : `Set ${sp}×`;
         }
       });
     }
@@ -748,11 +754,11 @@
     const tsGrid = document.getElementById('yt-pa-vid-time-saved-grid');
     if (tsGrid) {
       const baseRemaining = remainingSeconds;
-      tsGrid.querySelectorAll('.yt-pa-ts-item').forEach(item => {
+      tsGrid.querySelectorAll('.yt-pa-ts-row').forEach(item => {
         const sp = parseFloat(item.dataset.speed);
         if (isNaN(sp)) return;
         const saved = Math.max(0, baseRemaining - Math.round(baseRemaining / sp));
-        const valEl = item.querySelector('.yt-pa-ts-value');
+        const valEl = item.querySelector('.yt-pa-ts-val');
         if (valEl) valEl.textContent = formatDuration(saved);
       });
     }
@@ -772,13 +778,19 @@
     // Shortest / longest
     if (analysisData.shortest) {
       const s = analysisData.shortest;
-      document.getElementById('yt-pa-shortest').textContent =
-        `${formatTime(s.durationSeconds)} — ${s.title.substring(0, 35)}${s.title.length > 35 ? '...' : ''}`;
+      const title = s.title.length > 40 ? s.title.substring(0, 38) + '...' : s.title;
+      document.getElementById('yt-pa-shortest').innerHTML = `
+        <span class="yt-pa-ov-ext-title" title="${escapeHtml(s.title)}">${escapeHtml(title)}</span>
+        <span class="yt-pa-ov-ext-time">${formatTime(s.durationSeconds)}</span>
+      `;
     }
     if (analysisData.longest) {
       const l = analysisData.longest;
-      document.getElementById('yt-pa-longest').textContent =
-        `${formatTime(l.durationSeconds)} — ${l.title.substring(0, 35)}${l.title.length > 35 ? '...' : ''}`;
+      const title = l.title.length > 40 ? l.title.substring(0, 38) + '...' : l.title;
+      document.getElementById('yt-pa-longest').innerHTML = `
+        <span class="yt-pa-ov-ext-title" title="${escapeHtml(l.title)}">${escapeHtml(title)}</span>
+        <span class="yt-pa-ov-ext-time">${formatTime(l.durationSeconds)}</span>
+      `;
     }
 
     // Speeds
@@ -786,10 +798,10 @@
     speedsList.innerHTML = analysisData.speedAnalysis.map(item => {
       const pct = (item.totalSeconds / analysisData.totalSeconds) * 100;
       const rec = item.speed === 1.5;
-      return `<div class="yt-pa-speed-row ${rec ? 'recommended' : ''}">
-        <span class="yt-pa-speed-badge">${item.speed}x</span>
+      return `<div class="yt-pa-speed-row ${rec ? 'active' : ''}">
+        <span class="yt-pa-speed-label">${item.speed}×</span>
         <div class="yt-pa-speed-bar-bg"><div class="yt-pa-speed-bar-fill" style="width:${pct}%"></div></div>
-        <span class="yt-pa-speed-dur">${item.formatted}</span>
+        <span class="yt-pa-speed-val">${item.formatted}</span>
       </div>`;
     }).join('');
 
@@ -797,9 +809,9 @@
     const tsGrid = document.getElementById('yt-pa-time-saved-grid');
     tsGrid.innerHTML = [1.25, 1.5, 2, 3].map(sp => {
       const saved = analysisData.totalSeconds - Math.round(analysisData.totalSeconds / sp);
-      return `<div class="yt-pa-ts-item">
-        <div class="yt-pa-ts-speed">At ${sp}x</div>
-        <div class="yt-pa-ts-value">${formatDuration(saved)}</div>
+      return `<div class="yt-pa-ts-row">
+        <span class="yt-pa-ts-label">At ${sp}×</span>
+        <span class="yt-pa-ts-val">${formatDuration(saved)}</span>
       </div>`;
     }).join('');
 
@@ -807,16 +819,21 @@
     const schedList = document.getElementById('yt-pa-schedule-list');
     schedList.innerHTML = `
       <div class="yt-pa-sched-header">
-        <span>Watch Time</span><span>1x</span><span>1.5x</span><span>2x</span>
+        <span class="yt-pa-sched-col-time">Watch time / day</span>
+        <span class="yt-pa-sched-col">1×</span>
+        <span class="yt-pa-sched-col yt-pa-sched-col-active">1.5×</span>
+        <span class="yt-pa-sched-col">2×</span>
       </div>
-      ${analysisData.dailySchedules.map(s => `
-        <div class="yt-pa-sched-row">
-          <span class="yt-pa-sched-label">${s.label}</span>
-          <span>${s.days}d</span>
-          <span class="yt-pa-highlight">${s.daysAt1_5x}d</span>
-          <span>${s.daysAt2x}d</span>
-        </div>
-      `).join('')}
+      <div class="yt-pa-sched-body">
+        ${analysisData.dailySchedules.map(s => `
+          <div class="yt-pa-sched-row">
+            <span class="yt-pa-sched-col-time">${s.label}</span>
+            <span class="yt-pa-sched-col">${s.days}d</span>
+            <span class="yt-pa-sched-col yt-pa-sched-col-active">${s.daysAt1_5x}d</span>
+            <span class="yt-pa-sched-col">${s.daysAt2x}d</span>
+          </div>
+        `).join('')}
+      </div>
     `;
 
     updateCustomCalc();
@@ -828,7 +845,7 @@
     const spd = parseFloat(document.getElementById('yt-pa-custom-spd')?.value) || 1;
     const days = Math.ceil((analysisData.totalSeconds / spd) / (hrs * 3600));
     const el = document.getElementById('yt-pa-custom-days');
-    if (el) el.textContent = days;
+    if (el) el.textContent = `${days} day${days > 1 ? 's' : ''}`;
   }
 
   // ===== FLOATING BUTTON =====

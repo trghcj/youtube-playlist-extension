@@ -1,70 +1,67 @@
-/* YouTube Playlist Analyzer - Content Script Styles */
+/* YouTube Playlist Analyzer - Minimal Production-Ready Extension Styles */
 
-/* ===== FLOATING BUBBLE ===== */
+/* ===== FLOATING TRIGGER BUTTON ===== */
 #yt-playlist-analyzer-btn {
   position: fixed;
   bottom: 24px;
   right: 24px;
   z-index: 99999;
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #ff0000, #cc0000);
-  box-shadow: 0 2px 10px rgba(255, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.25);
+  background: #212121;
+  border: 1px solid #303030;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  opacity: 0.85;
+  transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), background-color 0.2s ease, border-color 0.2s ease;
+  color: #F1F1F1;
 }
 
 #yt-playlist-analyzer-btn:hover {
-  opacity: 1;
-  transform: scale(1.12);
-  box-shadow: 0 4px 18px rgba(255, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3);
+  background: #2a2a2a;
+  border-color: #404040;
+  transform: scale(1.06);
 }
 
 #yt-playlist-analyzer-btn:active {
-  transform: scale(0.95);
+  transform: scale(0.96);
 }
 
 #yt-playlist-analyzer-btn.active {
-  opacity: 1;
-  background: linear-gradient(135deg, #cc0000, #990000);
-  box-shadow: 0 2px 12px rgba(255, 0, 0, 0.5);
+  background: #212121;
+  border-color: #FF0000;
 }
 
-#yt-playlist-analyzer-btn .yt-pa-clock {
-  position: absolute;
-  bottom: 2px;
-  right: 2px;
-  background: #cc0000;
-  border-radius: 50%;
-  padding: 1px;
+#yt-playlist-analyzer-btn svg {
+  fill: #FF0000;
+  transition: fill 0.2s ease;
 }
 
 #yt-playlist-analyzer-btn .yt-pa-tooltip {
   position: absolute;
-  right: 54px;
+  right: 50px;
   background: #212121;
-  color: white;
-  padding: 6px 12px;
+  border: 1px solid #303030;
+  color: #F1F1F1;
+  padding: 5px 10px;
   border-radius: 6px;
   font-size: 12px;
-  font-family: 'Roboto', 'YouTube Sans', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   white-space: nowrap;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.2s;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  transition: opacity 0.15s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
 
 #yt-playlist-analyzer-btn:hover .yt-pa-tooltip {
   opacity: 1;
 }
 
-/* ===== HIDE IN FULLSCREEN ===== */
+/* ===== FULLSCREEN BEHAVIOR ===== */
 :fullscreen #yt-playlist-analyzer-btn,
 :fullscreen #yt-pa-panel,
 :-webkit-full-screen #yt-playlist-analyzer-btn,
@@ -74,35 +71,41 @@
   display: none !important;
 }
 
-/* ===== INLINE PANEL ===== */
+/* ===== MAIN EXTENSION PANEL ===== */
 #yt-pa-panel {
   position: fixed;
-  bottom: 78px;
+  bottom: 76px;
   right: 24px;
-  width: 370px;
-  max-height: min(520px, calc(100vh - 100px));
-  background: #1a1a1a;
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3);
+  width: 360px;
+  max-height: min(540px, calc(100vh - 100px));
+  background: #181818;
+  border: 1px solid #303030;
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3);
   z-index: 99998;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transform: scale(0.8) translateY(20px);
+  transform: translateY(12px) scale(0.98);
   opacity: 0;
   pointer-events: none;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  font-family: 'Segoe UI', 'Roboto', 'YouTube Sans', sans-serif;
-  color: #fff;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: #F1F1F1;
+  box-sizing: border-box;
+}
+
+#yt-pa-panel * {
+  box-sizing: border-box;
 }
 
 #yt-pa-panel.open {
-  transform: scale(1) translateY(0);
+  transform: translateY(0) scale(1);
   opacity: 1;
   pointer-events: all;
 }
 
-/* Panel Header - pinned to top */
+/* Header */
 .yt-pa-panel-header {
   flex-shrink: 0;
   display: flex;
@@ -110,77 +113,131 @@
   justify-content: space-between;
   padding: 12px 16px;
   background: #212121;
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid #303030;
 }
 
 .yt-pa-panel-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
+  color: #F1F1F1;
+  letter-spacing: -0.2px;
+}
+
+.yt-pa-panel-title svg {
+  flex-shrink: 0;
 }
 
 .yt-pa-panel-close {
   background: none;
   border: none;
-  color: #aaa;
-  font-size: 22px;
-  cursor: pointer;
-  padding: 2px 6px;
+  color: #AAAAAA;
+  font-size: 20px;
   line-height: 1;
-  border-radius: 4px;
-  transition: all 0.2s;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: color 0.15s ease, background-color 0.15s ease;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .yt-pa-panel-close:hover {
-  color: #fff;
-  background: rgba(255,255,255,0.1);
+  color: #F1F1F1;
+  background: #2a2a2a;
 }
 
-/* Pinned top navigation */
+/* Playlist Subheader & Navigation */
 .yt-pa-top-nav {
   flex-shrink: 0;
-  background: #1a1a1a;
-  border-bottom: 1px solid #333;
+  background: #181818;
+  border-bottom: 1px solid #303030;
 }
 
-/* Panel Body - only this part scrolls */
+.yt-pa-playlist-name {
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #AAAAAA;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 1px solid #252525;
+}
+
+/* Flat Text-based Tabs */
+.yt-pa-tabs {
+  display: flex;
+  padding: 0 16px;
+  gap: 20px;
+  background: #181818;
+}
+
+.yt-pa-tab {
+  padding: 10px 0;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #AAAAAA;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  font-family: inherit;
+}
+
+.yt-pa-tab:hover {
+  color: #F1F1F1;
+}
+
+.yt-pa-tab.active {
+  color: #F1F1F1;
+  border-bottom: 2px solid #FF0000;
+}
+
+/* Panel Body */
 .yt-pa-panel-body {
   flex: 1;
-  padding: 0;
+  padding: 16px;
   overflow-y: auto;
   min-height: 0;
 }
 
+/* Subtle Scrollbar */
 .yt-pa-panel-body::-webkit-scrollbar {
   width: 5px;
 }
-.yt-pa-panel-body::-webkit-scrollbar-thumb {
-  background: #444;
-  border-radius: 3px;
-}
-.yt-pa-panel-body::-webkit-scrollbar-thumb:hover {
-  background: #555;
+
+.yt-pa-panel-body::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-/* Loading */
+.yt-pa-panel-body::-webkit-scrollbar-thumb {
+  background: #303030;
+  border-radius: 4px;
+}
+
+.yt-pa-panel-body::-webkit-scrollbar-thumb:hover {
+  background: #454545;
+}
+
+/* Loading & Empty States */
 .yt-pa-loading {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 50px 20px;
+  padding: 48px 16px;
   gap: 14px;
 }
 
 .yt-pa-spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid #333;
+  width: 28px;
+  height: 28px;
+  border: 2px solid #303030;
   border-top-color: #FF0000;
   border-radius: 50%;
   animation: yt-pa-spin 0.7s linear infinite;
@@ -191,85 +248,69 @@
 }
 
 .yt-pa-loading p {
-  color: #aaa;
+  color: #AAAAAA;
   font-size: 13px;
+  margin: 0;
 }
 
-/* No Playlist */
 .yt-pa-no-playlist {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 40px 20px;
+  padding: 40px 16px;
   text-align: center;
 }
 
-/* Results */
-.yt-pa-playlist-name {
-  padding: 10px 16px;
-  font-size: 13px;
+.yt-pa-state-title {
+  font-size: 14px;
   font-weight: 600;
-  color: #ccc;
-  border-bottom: 1px solid #333;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: #F1F1F1;
+  margin: 12px 0 4px 0;
 }
 
-/* Tabs */
-.yt-pa-tabs {
-  display: flex;
-  border-bottom: 1px solid #333;
-  background: #1a1a1a;
-}
-
-.yt-pa-tab {
-  flex: 1;
-  padding: 9px 8px;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: #888;
-  cursor: pointer;
+.yt-pa-state-sub {
   font-size: 12px;
-  font-weight: 500;
-  transition: all 0.2s;
-  font-family: inherit;
+  color: #717171;
+  margin: 0;
 }
 
-.yt-pa-tab:hover {
-  color: #ddd;
-}
-
-.yt-pa-tab.active {
-  color: #fff;
-  border-bottom-color: #FF0000;
-}
-
-/* Tab content */
+/* Tab Contents */
 .yt-pa-tab-content {
   display: none;
-  padding: 14px 16px;
 }
 
 .yt-pa-tab-content.active {
   display: block;
 }
 
-/* ===== OVERVIEW TAB — clean list ===== */
-.yt-pa-overview-list {
-  background: #222;
-  border-radius: 10px;
-  overflow: hidden;
+/* Global Subtle Divider */
+.yt-pa-divider {
+  height: 1px;
+  background: #303030;
+  margin: 16px 0;
+}
+
+/* Section Headings */
+.yt-pa-section-heading {
+  font-size: 13px;
+  font-weight: 600;
+  color: #F1F1F1;
+  margin-bottom: 10px;
+}
+
+/* ===== OVERVIEW TAB ===== */
+.yt-pa-ov-list {
+  display: flex;
+  flex-direction: column;
 }
 
 .yt-pa-ov-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 11px 14px;
-  border-bottom: 1px solid #2d2d2d;
+  padding: 9px 0;
+  border-bottom: 1px solid #252525;
 }
 
 .yt-pa-ov-row:last-child {
@@ -278,267 +319,274 @@
 
 .yt-pa-ov-label {
   font-size: 13px;
-  color: #999;
+  color: #AAAAAA;
 }
 
-.yt-pa-ov-value {
+.yt-pa-ov-val {
   font-size: 14px;
-  font-weight: 600;
-  color: #e0e0e0;
-}
-
-.yt-pa-ov-value.yt-pa-ov-main {
-  color: #fff;
-  font-size: 15px;
-}
-
-.yt-pa-ov-value.yt-pa-ov-accent {
-  color: #3ea6ff;
-}
-
-.yt-pa-ov-value.yt-pa-ov-small {
-  font-size: 12px;
   font-weight: 500;
-  color: #aaa;
-  max-width: 190px;
+  color: #F1F1F1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Shortest / Longest Section */
+.yt-pa-ov-extremes {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.yt-pa-ov-ext-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.yt-pa-ov-ext-heading {
+  font-size: 12px;
+  color: #717171;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.yt-pa-ov-ext-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.yt-pa-ov-ext-title {
+  font-size: 13px;
+  color: #F1F1F1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-align: right;
+  flex: 1;
+}
+
+.yt-pa-ov-ext-time {
+  font-size: 13px;
+  font-weight: 500;
+  color: #AAAAAA;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 
 /* ===== SPEEDS TAB ===== */
+.yt-pa-speeds-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .yt-pa-speed-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 0;
-  border-bottom: 1px solid #2a2a2a;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  transition: background-color 0.15s ease;
 }
 
-.yt-pa-speed-row:last-child {
-  border-bottom: none;
+.yt-pa-speed-row:hover {
+  background: #212121;
 }
 
-.yt-pa-speed-badge {
-  background: #cc0000;
-  color: white;
-  padding: 3px 9px;
-  border-radius: 10px;
-  font-size: 11px;
+.yt-pa-speed-row.active {
+  background: #212121;
+}
+
+.yt-pa-speed-label {
+  font-size: 13px;
+  color: #AAAAAA;
+  min-width: 36px;
+}
+
+.yt-pa-speed-row.active .yt-pa-speed-label {
+  color: #F1F1F1;
   font-weight: 600;
-  min-width: 42px;
-  text-align: center;
-}
-
-.yt-pa-speed-row.recommended .yt-pa-speed-badge {
-  background: #2e7d32;
 }
 
 .yt-pa-speed-bar-bg {
   flex: 1;
   height: 4px;
-  background: #333;
+  background: #303030;
   border-radius: 2px;
   overflow: hidden;
 }
 
 .yt-pa-speed-bar-fill {
   height: 100%;
-  background: #cc0000;
+  background: #717171;
   border-radius: 2px;
-  transition: width 0.5s ease;
+  transition: width 0.3s ease;
 }
 
-.yt-pa-speed-row.recommended .yt-pa-speed-bar-fill {
-  background: #2e7d32;
+.yt-pa-speed-row.active .yt-pa-speed-bar-fill {
+  background: #FF0000;
 }
 
-.yt-pa-speed-dur {
+.yt-pa-speed-val {
   font-size: 13px;
-  font-weight: 600;
-  min-width: 80px;
+  font-weight: 500;
+  color: #F1F1F1;
+  min-width: 78px;
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
-/* Time Saved */
-.yt-pa-time-saved {
-  margin-top: 18px;
-  background: #222;
-  border-radius: 10px;
-  padding: 14px;
+/* Time Saved Section */
+.yt-pa-ts-list {
+  display: flex;
+  flex-direction: column;
 }
 
-.yt-pa-ts-title {
+.yt-pa-ts-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #252525;
+}
+
+.yt-pa-ts-row:last-child {
+  border-bottom: none;
+}
+
+.yt-pa-ts-label {
+  font-size: 13px;
+  color: #AAAAAA;
+}
+
+.yt-pa-ts-val {
   font-size: 13px;
   font-weight: 600;
-  margin-bottom: 12px;
-  color: #ccc;
-}
-
-.yt-pa-ts-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.yt-pa-ts-item {
-  text-align: center;
-  padding: 8px;
-  background: rgba(46, 125, 50, 0.12);
-  border-radius: 8px;
-}
-
-.yt-pa-ts-speed {
-  font-size: 10px;
-  color: #888;
-  margin-bottom: 3px;
-}
-
-.yt-pa-ts-value {
-  font-size: 14px;
-  font-weight: 700;
-  color: #4caf50;
+  color: #F1F1F1;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ===== SCHEDULE TAB ===== */
+.yt-pa-schedule-table {
+  display: flex;
+  flex-direction: column;
+}
+
 .yt-pa-sched-header,
 .yt-pa-sched-row {
   display: grid;
-  grid-template-columns: 90px 1fr 1fr 1fr;
-  gap: 6px;
-  padding: 8px 10px;
-  font-size: 12px;
+  grid-template-columns: 100px 1fr 1fr 1fr;
   align-items: center;
+  padding: 8px 0;
 }
 
 .yt-pa-sched-header {
-  color: #666;
+  border-bottom: 1px solid #303030;
+  padding-bottom: 6px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  font-size: 10px;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.4px;
+  color: #717171;
 }
 
 .yt-pa-sched-row {
-  background: #222;
-  border-radius: 8px;
-  margin-bottom: 4px;
+  border-bottom: 1px solid #252525;
+  font-size: 13px;
 }
 
-.yt-pa-sched-label {
-  color: #aaa;
-  font-weight: 500;
+.yt-pa-sched-row:last-child {
+  border-bottom: none;
 }
 
-.yt-pa-sched-row span {
+.yt-pa-sched-col-time {
+  color: #AAAAAA;
+}
+
+.yt-pa-sched-col {
   text-align: center;
+  color: #F1F1F1;
+  font-variant-numeric: tabular-nums;
+}
+
+.yt-pa-sched-col-active {
+  color: #F1F1F1;
   font-weight: 600;
-}
-
-.yt-pa-highlight {
-  color: #3ea6ff !important;
-}
-
-/* Divider between schedule table and custom calculator */
-.yt-pa-cc-divider {
-  height: 1px;
-  background: #333;
-  margin: 18px 0;
 }
 
 /* Custom Calculator */
 .yt-pa-custom-calc {
-  background: #222;
-  border-radius: 10px;
-  padding: 14px;
+  display: flex;
+  flex-direction: column;
 }
 
-.yt-pa-cc-title {
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 14px;
-  color: #ccc;
-}
-
-.yt-pa-cc-row {
+.yt-pa-cc-grid {
   display: flex;
   gap: 12px;
+  margin-bottom: 12px;
 }
 
-.yt-pa-cc-input {
+.yt-pa-cc-field {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.yt-pa-cc-input label {
-  display: block;
-  font-size: 11px;
-  color: #777;
-  margin-bottom: 6px;
+.yt-pa-field-label {
+  font-size: 12px;
+  color: #AAAAAA;
 }
 
-.yt-pa-cc-input input,
-.yt-pa-cc-input select {
+.yt-pa-select {
   width: 100%;
   padding: 8px 10px;
-  background: #1a1a1a;
-  border: 1px solid #444;
+  background: #212121;
+  border: 1px solid #303030;
   border-radius: 8px;
-  color: #fff;
+  color: #F1F1F1;
   font-size: 13px;
   outline: none;
   font-family: inherit;
   -webkit-appearance: none;
   appearance: none;
-}
-
-.yt-pa-cc-input select {
   cursor: pointer;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23999' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'%3E%3Cpath fill='%23AAAAAA' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
-  padding-right: 28px;
+  padding-right: 26px;
+  transition: border-color 0.15s ease;
 }
 
-.yt-pa-cc-input input:focus,
-.yt-pa-cc-input select:focus {
-  border-color: #ff0000;
+.yt-pa-select:focus {
+  border-color: #FF0000;
 }
 
 .yt-pa-cc-result {
-  margin-top: 14px;
-  text-align: center;
-  padding: 12px;
-  background: rgba(62, 166, 255, 0.08);
-  border-radius: 8px;
   font-size: 13px;
-  color: #aaa;
+  color: #AAAAAA;
 }
 
-.yt-pa-cc-days {
-  display: block;
-  font-size: 26px;
-  font-weight: 700;
-  color: #3ea6ff;
-  margin-bottom: 2px;
+.yt-pa-cc-days-val {
+  color: #F1F1F1;
+  font-weight: 600;
 }
 
-/* ===== VIDEO MODE STYLES ===== */
+/* ===== VIDEO ANALYZER MODE ===== */
 .yt-pa-video-results {
-  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
 }
 
-.yt-pa-vid-card {
-  background: #222;
-  border-radius: 12px;
-  padding: 14px;
-  border: 1px solid #2d2d2d;
+.yt-pa-vid-meta {
+  margin-bottom: 12px;
 }
 
 .yt-pa-vid-title {
   font-size: 14px;
   font-weight: 600;
-  color: #fff;
+  color: #F1F1F1;
   line-height: 1.35;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -548,168 +596,140 @@
 }
 
 .yt-pa-vid-channel {
-  font-size: 11px;
-  color: #888;
+  font-size: 12px;
+  color: #717171;
   margin-top: 4px;
+}
+
+/* Video Progress */
+.yt-pa-vid-progress-block {
   margin-bottom: 12px;
 }
 
 .yt-pa-vid-progress-bar-bg {
-  height: 5px;
-  background: #333;
-  border-radius: 3px;
+  height: 4px;
+  background: #303030;
+  border-radius: 2px;
   overflow: hidden;
 }
 
 .yt-pa-vid-progress-bar-fill {
   height: 100%;
-  background: #ff0000;
-  border-radius: 3px;
-  transition: width 0.3s ease;
+  background: #FF0000;
+  border-radius: 2px;
+  transition: width 0.25s linear;
 }
 
 .yt-pa-vid-time-row {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
-  color: #888;
+  font-size: 12px;
+  color: #717171;
   margin-top: 6px;
   font-variant-numeric: tabular-nums;
 }
 
-.yt-pa-vid-finish-badge {
-  margin-top: 12px;
-  background: rgba(62, 166, 255, 0.08);
-  border: 1px solid rgba(62, 166, 255, 0.2);
-  border-radius: 10px;
+/* Estimated Finish */
+.yt-pa-vid-finish-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   padding: 10px 12px;
-  text-align: center;
+  background: #212121;
+  border: 1px solid #303030;
+  border-radius: 8px;
 }
 
-.yt-pa-finish-label {
-  display: block;
-  font-size: 10px;
+.yt-pa-vid-finish-label {
+  font-size: 11px;
+  color: #717171;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: #3ea6ff;
-  font-weight: 600;
+  letter-spacing: 0.3px;
+  font-weight: 500;
 }
 
-.yt-pa-finish-time {
-  display: block;
-  font-size: 22px;
-  font-weight: 700;
-  color: #fff;
-  margin: 2px 0;
+.yt-pa-vid-finish-time {
+  font-size: 18px;
+  font-weight: 600;
+  color: #F1F1F1;
   font-variant-numeric: tabular-nums;
 }
 
-.yt-pa-finish-sub {
-  font-size: 11px;
-  color: #aaa;
+.yt-pa-vid-finish-sub {
+  font-size: 12px;
+  color: #AAAAAA;
 }
 
-.yt-pa-vid-section-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #ccc;
-  margin: 18px 0 10px 0;
-}
-
+/* Video Speeds Table */
 .yt-pa-vid-speeds-table {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .yt-pa-vid-speed-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
-  background: #222;
-  border: 1px solid #2d2d2d;
-  border-radius: 8px;
-  transition: all 0.2s;
+  padding: 6px 8px;
+  border-radius: 6px;
+  transition: background-color 0.15s ease;
   cursor: pointer;
 }
 
 .yt-pa-vid-speed-row:hover {
-  background: #282828;
-  border-color: #3a3a3a;
+  background: #212121;
 }
 
 .yt-pa-vid-speed-row.active {
-  border-color: #ff0000;
-  background: rgba(255, 0, 0, 0.07);
+  background: #212121;
 }
 
-.yt-pa-vid-speed-left {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 68px;
+.yt-pa-vid-speed-label {
+  font-size: 13px;
+  color: #AAAAAA;
+  min-width: 38px;
 }
 
-.yt-pa-vid-speed-badge {
-  font-size: 12px;
-  font-weight: 700;
-  color: #fff;
-}
-
-.yt-pa-vid-speed-badge.current {
-  color: #ff4d4d;
-}
-
-.yt-pa-vid-speed-status {
-  font-size: 9px;
-  text-transform: uppercase;
-  color: #ff4d4d;
-  font-weight: 700;
-  letter-spacing: 0.3px;
-}
-
-.yt-pa-vid-speed-center {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  flex: 1;
-  padding: 0 10px;
+.yt-pa-vid-speed-row.active .yt-pa-vid-speed-label {
+  color: #F1F1F1;
+  font-weight: 600;
 }
 
 .yt-pa-vid-speed-time {
   font-size: 12px;
-  font-weight: 600;
-  color: #e0e0e0;
+  color: #F1F1F1;
+  font-variant-numeric: tabular-nums;
 }
 
 .yt-pa-vid-speed-finish {
-  font-size: 10px;
-  color: #888;
+  font-size: 12px;
+  color: #717171;
+  font-variant-numeric: tabular-nums;
 }
 
 .yt-pa-vid-set-speed-btn {
-  padding: 4px 10px;
-  background: #2d2d2d;
-  border: 1px solid #3d3d3d;
-  border-radius: 12px;
-  color: #aaa;
+  padding: 3px 8px;
+  background: #252525;
+  border: 1px solid #303030;
+  border-radius: 6px;
+  color: #AAAAAA;
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.15s ease;
   font-family: inherit;
 }
 
 .yt-pa-vid-set-speed-btn:hover {
-  color: #fff;
-  border-color: #555;
-  background: #333;
+  color: #F1F1F1;
+  border-color: #404040;
+  background: #2a2a2a;
 }
 
 .yt-pa-vid-set-speed-btn.active {
-  background: #cc0000;
-  border-color: #ff0000;
-  color: #fff;
+  background: #FF0000;
+  border-color: #FF0000;
+  color: #F1F1F1;
   font-weight: 600;
 }
