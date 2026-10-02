@@ -19,6 +19,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let currentAnalysis = null;
   let currentPlaylistData = null;
+  let videoPollTimer = null;
+
+  function stopVideoAnalyzer() {
+    if (videoPollTimer) {
+      clearInterval(videoPollTimer);
+      videoPollTimer = null;
+    }
+  }
+
+  window.addEventListener('unload', stopVideoAnalyzer);
 
   // Tab navigation
   document.querySelectorAll('.yt-pa-tab').forEach(tab => {
@@ -112,17 +122,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Start analysis automatically
   startAnalysis();
-
-  let videoPollTimer = null;
-
-  function stopVideoAnalyzer() {
-    if (videoPollTimer) {
-      clearInterval(videoPollTimer);
-      videoPollTimer = null;
-    }
-  }
-
-  window.addEventListener('unload', stopVideoAnalyzer);
 
   async function startAnalysis() {
     stopVideoAnalyzer();
