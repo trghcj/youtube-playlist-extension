@@ -648,7 +648,47 @@
     observer.observe(document.body, { childList: true, subtree: true });
   }
 
+  // Watch for fullscreen mode (hide button and close panel during fullscreen video)
+  function setupFullscreenWatcher() {
+    function checkFullscreen() {
+      if (!isContextValid()) return;
+      const isFullscreen = !!(
+        document.fullscreenElement ||
+        document.webkitFullscreenElement ||
+        document.mozFullScreenElement ||
+        document.querySelector('.ytp-fullscreen') ||
+        document.querySelector('ytd-watch-flexy[fullscreen]')
+      );
+      if (isFullscreen) {
+        document.body.classList.add('yt-pa-fullscreen');
+        if (panelOpen) {
+          togglePanel();
+        }
+      } else {
+        document.body.classList.remove('yt-pa-fullscreen');
+      }
+    }
+
+    document.addEventListener('fullscreenchange', checkFullscreen);
+    document.addEventListener('webkitfullscreenchange', checkFullscreen);
+
+    const playerObserver = new MutationObserver(() => {
+      if (!isContextValid()) {
+        try { playerObserver.disconnect(); } catch (e) {}
+        return;
+      }
+      checkFullscreen();
+    });
+
+    playerObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class', 'fullscreen', 'data-player-size'],
+      subtree: true
+    });
+  }
+
   // Initialize
   injectFloatingButton();
   watchNavigation();
+  setupFullscreenWatcher();
 })();

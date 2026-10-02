@@ -64,6 +64,22 @@
   opacity: 1;
 }
 
+/* ===== HIDE COMPLETELY IN FULLSCREEN ===== */
+:fullscreen #yt-playlist-analyzer-btn,
+:fullscreen #yt-pa-panel,
+:-webkit-full-screen #yt-playlist-analyzer-btn,
+:-webkit-full-screen #yt-pa-panel,
+body:has(.ytp-fullscreen) #yt-playlist-analyzer-btn,
+body:has(.ytp-fullscreen) #yt-pa-panel,
+body:has(ytd-watch-flexy[fullscreen]) #yt-playlist-analyzer-btn,
+body:has(ytd-watch-flexy[fullscreen]) #yt-pa-panel,
+body.yt-pa-fullscreen #yt-playlist-analyzer-btn,
+body.yt-pa-fullscreen #yt-pa-panel {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 /* ===== INLINE PANEL ===== */
 #yt-pa-panel {
   position: fixed;
