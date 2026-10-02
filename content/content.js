@@ -221,9 +221,11 @@
   }
 
   function formatDuration(totalSeconds) {
+    if (typeof totalSeconds !== 'number' || isNaN(totalSeconds) || totalSeconds < 0) totalSeconds = 0;
+    totalSeconds = Math.round(totalSeconds * 100) / 100;
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
+    const seconds = Math.round((totalSeconds % 60) * 100) / 100;
     const parts = [];
     if (hours > 0) parts.push(`${hours}h`);
     if (minutes > 0) parts.push(`${minutes}m`);
