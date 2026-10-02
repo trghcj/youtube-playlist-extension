@@ -620,14 +620,8 @@
     loading.style.display = 'none';
     videoResults.style.display = 'block';
 
+    initVideoAnalysisDOM();
     updateVideoAnalysisUI();
-
-    videoTimeUpdateHandler = () => {
-      if (panelOpen && isVideoPage()) {
-        updateVideoAnalysisUI();
-      }
-    };
-    video.addEventListener('timeupdate', videoTimeUpdateHandler);
 
     videoIntervalTimer = setInterval(() => {
       if (panelOpen && isVideoPage()) {
@@ -638,6 +632,49 @@
     }, 1000);
   }
 
+  function initVideoAnalysisDOM() {
+    const speedsTable = document.getElementById('yt-pa-vid-speeds-table');
+    const tsGrid = document.getElementById('yt-pa-vid-time-saved-grid');
+    const speeds = [1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+
+    if (speedsTable && !speedsTable.hasChildNodes()) {
+      speedsTable.innerHTML = speeds.map(sp => `
+        <div class="yt-pa-vid-speed-row" data-speed="${sp}">
+          <div class="yt-pa-vid-speed-left">
+            <span class="yt-pa-vid-speed-badge">${sp}x</span>
+            <span class="yt-pa-vid-speed-status"></span>
+          </div>
+          <div class="yt-pa-vid-speed-center">
+            <span class="yt-pa-vid-speed-time">--</span>
+            <span class="yt-pa-vid-speed-finish">--</span>
+          </div>
+          <button class="yt-pa-vid-set-speed-btn" data-speed="${sp}">Set ${sp}x</button>
+        </div>
+      `).join('');
+
+      speedsTable.querySelectorAll('.yt-pa-vid-speed-row').forEach(row => {
+        row.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const targetSpeed = parseFloat(row.dataset.speed);
+          const vid = document.querySelector('video.html5-main-video') || document.querySelector('video');
+          if (!isNaN(targetSpeed) && vid) {
+            vid.playbackRate = targetSpeed;
+            updateVideoAnalysisUI();
+          }
+        });
+      });
+    }
+
+    if (tsGrid && !tsGrid.hasChildNodes()) {
+      tsGrid.innerHTML = [1.25, 1.5, 2, 3].map(sp => `
+        <div class="yt-pa-ts-item" data-speed="${sp}">
+          <div class="yt-pa-ts-speed">At ${sp}x</div>
+          <div class="yt-pa-ts-value">--</div>
+        </div>
+      `).join('');
+    }
+  }
+
   function updateVideoAnalysisUI() {
     if (!isContextValid()) return;
     const video = document.querySelector('video.html5-main-video') || document.querySelector('video');
@@ -646,8 +683,8 @@
     const meta = getVideoMeta();
     const titleEl = document.getElementById('yt-pa-vid-title');
     const channelEl = document.getElementById('yt-pa-vid-channel');
-    if (titleEl) titleEl.textContent = meta.title || 'YouTube Video';
-    if (channelEl) channelEl.textContent = meta.channel;
+    if (titleEl && titleEl.textContent !== meta.title) titleEl.textContent = meta.title || 'YouTube Video';
+    if (channelEl && channelEl.textContent !== meta.channel) channelEl.textContent = meta.channel;
 
     const currentTime = video.currentTime || 0;
     const duration = video.duration || 0;
@@ -674,55 +711,48 @@
     if (clockEl) clockEl.textContent = endClockStr;
     if (remainEl) remainEl.textContent = `${formatDuration(Math.round(adjustedRemaining))} left (${currentSpeed}x)`;
 
-    // Speeds table
+    // Update speeds table text only
     const speedsTable = document.getElementById('yt-pa-vid-speeds-table');
-    const speeds = [1, 1.25, 1.5, 1.75, 2, 2.5, 3];
-
     if (speedsTable) {
-      speedsTable.innerHTML = speeds.map(sp => {
+      speedsTable.querySelectorAll('.yt-pa-vid-speed-row').forEach(row => {
+        const sp = parseFloat(row.dataset.speed);
+        if (isNaN(sp)) return;
         const spRemaining = Math.max(0, remainingSeconds / sp);
         const spFinish = new Date(Date.now() + spRemaining * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
         const isCurrent = Math.abs(currentSpeed - sp) < 0.05;
-        return `
-          <div class="yt-pa-vid-speed-row ${isCurrent ? 'active' : ''}" data-speed="${sp}">
-            <div class="yt-pa-vid-speed-left">
-              <span class="yt-pa-vid-speed-badge ${isCurrent ? 'current' : ''}">${sp}x</span>
-              <span class="yt-pa-vid-speed-status">${isCurrent ? 'Active' : ''}</span>
-            </div>
-            <div class="yt-pa-vid-speed-center">
-              <span class="yt-pa-vid-speed-time">${formatDuration(Math.round(spRemaining))} left</span>
-              <span class="yt-pa-vid-speed-finish">Ends at ${spFinish}</span>
-            </div>
-            <button class="yt-pa-vid-set-speed-btn ${isCurrent ? 'active' : ''}" data-speed="${sp}">${isCurrent ? 'Current' : 'Set ' + sp + 'x'}</button>
-          </div>
-        `;
-      }).join('');
 
-      speedsTable.querySelectorAll('.yt-pa-vid-set-speed-btn, .yt-pa-vid-speed-row').forEach(el => {
-        el.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const targetSpeed = parseFloat(el.dataset.speed);
-          if (!isNaN(targetSpeed) && video) {
-            video.playbackRate = targetSpeed;
-            updateVideoAnalysisUI();
-          }
-        });
+        row.classList.toggle('active', isCurrent);
+        const statusEl = row.querySelector('.yt-pa-vid-speed-status');
+        if (statusEl) statusEl.textContent = isCurrent ? 'Active' : '';
+
+        const badgeEl = row.querySelector('.yt-pa-vid-speed-badge');
+        if (badgeEl) badgeEl.classList.toggle('current', isCurrent);
+
+        const timeEl = row.querySelector('.yt-pa-vid-speed-time');
+        if (timeEl) timeEl.textContent = `${formatDuration(Math.round(spRemaining))} left`;
+
+        const finishEl = row.querySelector('.yt-pa-vid-speed-finish');
+        if (finishEl) finishEl.textContent = `Ends at ${spFinish}`;
+
+        const btnEl = row.querySelector('.yt-pa-vid-set-speed-btn');
+        if (btnEl) {
+          btnEl.classList.toggle('active', isCurrent);
+          btnEl.textContent = isCurrent ? 'Current' : `Set ${sp}x`;
+        }
       });
     }
 
-    // Time saved grid
+    // Update time saved grid text only
     const tsGrid = document.getElementById('yt-pa-vid-time-saved-grid');
     if (tsGrid) {
-      const baseRemaining = remainingSeconds; // at 1x
-      tsGrid.innerHTML = [1.25, 1.5, 2, 3].map(sp => {
+      const baseRemaining = remainingSeconds;
+      tsGrid.querySelectorAll('.yt-pa-ts-item').forEach(item => {
+        const sp = parseFloat(item.dataset.speed);
+        if (isNaN(sp)) return;
         const saved = Math.max(0, baseRemaining - Math.round(baseRemaining / sp));
-        return `
-          <div class="yt-pa-ts-item">
-            <div class="yt-pa-ts-speed">At ${sp}x</div>
-            <div class="yt-pa-ts-value">${formatDuration(saved)}</div>
-          </div>
-        `;
-      }).join('');
+        const valEl = item.querySelector('.yt-pa-ts-value');
+        if (valEl) valEl.textContent = formatDuration(saved);
+      });
     }
   }
 
@@ -857,41 +887,26 @@
 
   // Watch for fullscreen mode (hide button and close panel during fullscreen video)
   function setupFullscreenWatcher() {
-    function checkFullscreen() {
+    function onFullscreenChange() {
       if (!isContextValid()) return;
-      const isFullscreen = !!(
-        document.fullscreenElement ||
-        document.webkitFullscreenElement ||
-        document.mozFullScreenElement ||
-        document.querySelector('.ytp-fullscreen') ||
-        document.querySelector('ytd-watch-flexy[fullscreen]')
-      );
+      const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
+      const btn = document.getElementById('yt-playlist-analyzer-btn');
+      const panel = document.getElementById('yt-pa-panel');
+
       if (isFullscreen) {
-        document.body.classList.add('yt-pa-fullscreen');
+        if (btn) btn.classList.add('yt-pa-hidden');
+        if (panel) panel.classList.add('yt-pa-hidden');
         if (panelOpen) {
           togglePanel();
         }
       } else {
-        document.body.classList.remove('yt-pa-fullscreen');
+        if (btn) btn.classList.remove('yt-pa-hidden');
+        if (panel) panel.classList.remove('yt-pa-hidden');
       }
     }
 
-    document.addEventListener('fullscreenchange', checkFullscreen);
-    document.addEventListener('webkitfullscreenchange', checkFullscreen);
-
-    const playerObserver = new MutationObserver(() => {
-      if (!isContextValid()) {
-        try { playerObserver.disconnect(); } catch (e) {}
-        return;
-      }
-      checkFullscreen();
-    });
-
-    playerObserver.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class', 'fullscreen', 'data-player-size'],
-      subtree: true
-    });
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', onFullscreenChange);
   }
 
   // Initialize
