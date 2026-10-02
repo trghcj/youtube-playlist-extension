@@ -52,6 +52,28 @@
     return urlParams.get('list');
   }
 
+  function isVideoPage() {
+    const url = window.location.href;
+    return url.includes('/watch') || url.includes('/shorts/');
+  }
+
+  function getVideoMeta() {
+    let title = '';
+    const titleEl = document.querySelector('h1.ytd-watch-metadata yt-formatted-string, #title h1, ytd-video-primary-info-renderer #title h1, h1.title');
+    if (titleEl) {
+      title = titleEl.textContent.trim();
+    } else {
+      title = document.title.replace(' - YouTube', '').trim();
+    }
+
+    let channel = '';
+    const channelEl = document.querySelector('#owner-text a, #channel-name a, ytd-channel-name a, .ytd-video-owner-renderer a');
+    if (channelEl) {
+      channel = channelEl.textContent.trim();
+    }
+    return { title, channel };
+  }
+
   function parseDurationString(durationStr) {
     if (!durationStr) return 0;
     durationStr = durationStr.trim();
@@ -284,7 +306,7 @@
           <svg viewBox="0 0 24 24" width="20" height="20" fill="#FF0000">
             <path d="M21.58 7.19c-.23-.86-.91-1.54-1.77-1.77C18.25 5 12 5 12 5s-6.25 0-7.81.42c-.86.23-1.54.91-1.77 1.77C2 8.75 2 12 2 12s0 3.25.42 4.81c.23.86.91 1.54 1.77 1.77C5.75 19 12 19 12 19s6.25 0 7.81-.42c.86-.23 1.54-.91 1.77-1.77C22 15.25 22 12 22 12s0-3.25-.42-4.81zM10 15V9l5.2 3-5.2 3z"/>
           </svg>
-          <span>Playlist Analyzer</span>
+          <span id="yt-pa-header-title">Playlist Analyzer</span>
         </div>
         <button class="yt-pa-panel-close" id="yt-pa-close" title="Close">&times;</button>
       </div>
@@ -396,6 +418,32 @@
             </div>
           </div>
         </div>
+        <div class="yt-pa-video-results" id="yt-pa-video-results" style="display:none;">
+          <div class="yt-pa-vid-card">
+            <div class="yt-pa-vid-title" id="yt-pa-vid-title">Loading video...</div>
+            <div class="yt-pa-vid-channel" id="yt-pa-vid-channel"></div>
+            <div class="yt-pa-vid-progress-bar-bg">
+              <div class="yt-pa-vid-progress-bar-fill" id="yt-pa-vid-progress-fill" style="width:0%"></div>
+            </div>
+            <div class="yt-pa-vid-time-row">
+              <span id="yt-pa-vid-current">0:00</span>
+              <span id="yt-pa-vid-total">0:00</span>
+            </div>
+            <div class="yt-pa-vid-finish-badge">
+              <span class="yt-pa-finish-label">Estimated Finish</span>
+              <span class="yt-pa-finish-time" id="yt-pa-vid-end-clock">--:--</span>
+              <span class="yt-pa-finish-sub" id="yt-pa-vid-remain-text">-- left</span>
+            </div>
+          </div>
+
+          <div class="yt-pa-vid-section-title">Speed & Finish Time</div>
+          <div class="yt-pa-vid-speeds-table" id="yt-pa-vid-speeds-table"></div>
+
+          <div class="yt-pa-time-saved" style="margin-top: 14px;">
+            <div class="yt-pa-ts-title">Time You Save</div>
+            <div class="yt-pa-ts-grid" id="yt-pa-vid-time-saved-grid"></div>
+          </div>
+        </div>
       </div>
     `;
     document.body.appendChild(panel);
@@ -440,6 +488,22 @@
         panel.classList.remove('open');
         if (btn) btn.classList.remove('active');
       }
+      stopVideoAnalyzer();
+    }
+  }
+
+  let videoTimeUpdateHandler = null;
+  let videoIntervalTimer = null;
+
+  function stopVideoAnalyzer() {
+    if (videoIntervalTimer) {
+      clearInterval(videoIntervalTimer);
+      videoIntervalTimer = null;
+    }
+    const video = document.querySelector('video.html5-main-video') || document.querySelector('video');
+    if (video && videoTimeUpdateHandler) {
+      video.removeEventListener('timeupdate', videoTimeUpdateHandler);
+      videoTimeUpdateHandler = null;
     }
   }
 
@@ -448,18 +512,37 @@
     const loading = document.getElementById('yt-pa-loading');
     const noPlaylist = document.getElementById('yt-pa-no-playlist');
     const results = document.getElementById('yt-pa-results');
+    const videoResults = document.getElementById('yt-pa-video-results');
     const topNav = document.getElementById('yt-pa-top-nav');
+    const headerTitle = document.getElementById('yt-pa-header-title');
 
     loading.style.display = 'flex';
     noPlaylist.style.display = 'none';
     results.style.display = 'none';
+    if (videoResults) videoResults.style.display = 'none';
     if (topNav) topNav.style.display = 'none';
 
-    if (!isPlaylistPage()) {
+    stopVideoAnalyzer();
+
+    if (isPlaylistPage()) {
+      if (headerTitle) headerTitle.textContent = 'Playlist Analyzer';
+      await runPlaylistAnalysis();
+    } else if (isVideoPage()) {
+      if (headerTitle) headerTitle.textContent = 'Video Analyzer';
+      runVideoAnalysis();
+    } else {
       loading.style.display = 'none';
       noPlaylist.style.display = 'flex';
-      return;
+      noPlaylist.querySelector('p:first-of-type').textContent = 'No Media Found';
+      noPlaylist.querySelector('p:last-of-type').textContent = 'Open any YouTube video or playlist to analyze.';
     }
+  }
+
+  async function runPlaylistAnalysis() {
+    const loading = document.getElementById('yt-pa-loading');
+    const noPlaylist = document.getElementById('yt-pa-no-playlist');
+    const results = document.getElementById('yt-pa-results');
+    const topNav = document.getElementById('yt-pa-top-nav');
 
     try {
       playlistData = await extractPlaylistData();
@@ -517,6 +600,129 @@
       noPlaylist.style.display = 'flex';
       noPlaylist.querySelector('p:first-of-type').textContent = 'Error';
       noPlaylist.querySelector('p:last-of-type').textContent = err.message;
+    }
+  }
+
+  function runVideoAnalysis() {
+    const loading = document.getElementById('yt-pa-loading');
+    const noPlaylist = document.getElementById('yt-pa-no-playlist');
+    const videoResults = document.getElementById('yt-pa-video-results');
+
+    const video = document.querySelector('video.html5-main-video') || document.querySelector('video');
+    if (!video) {
+      loading.style.display = 'none';
+      noPlaylist.style.display = 'flex';
+      noPlaylist.querySelector('p:first-of-type').textContent = 'No Video Playing';
+      noPlaylist.querySelector('p:last-of-type').textContent = 'Please play a video on YouTube.';
+      return;
+    }
+
+    loading.style.display = 'none';
+    videoResults.style.display = 'block';
+
+    updateVideoAnalysisUI();
+
+    videoTimeUpdateHandler = () => {
+      if (panelOpen && isVideoPage()) {
+        updateVideoAnalysisUI();
+      }
+    };
+    video.addEventListener('timeupdate', videoTimeUpdateHandler);
+
+    videoIntervalTimer = setInterval(() => {
+      if (panelOpen && isVideoPage()) {
+        updateVideoAnalysisUI();
+      } else {
+        stopVideoAnalyzer();
+      }
+    }, 1000);
+  }
+
+  function updateVideoAnalysisUI() {
+    if (!isContextValid()) return;
+    const video = document.querySelector('video.html5-main-video') || document.querySelector('video');
+    if (!video || isNaN(video.duration) || video.duration <= 0) return;
+
+    const meta = getVideoMeta();
+    const titleEl = document.getElementById('yt-pa-vid-title');
+    const channelEl = document.getElementById('yt-pa-vid-channel');
+    if (titleEl) titleEl.textContent = meta.title || 'YouTube Video';
+    if (channelEl) channelEl.textContent = meta.channel;
+
+    const currentTime = video.currentTime || 0;
+    const duration = video.duration || 0;
+    const currentSpeed = video.playbackRate || 1;
+    const remainingSeconds = Math.max(0, duration - currentTime);
+    const progressPercent = Math.min(100, Math.max(0, (currentTime / duration) * 100));
+
+    // Progress bar and times
+    const fillEl = document.getElementById('yt-pa-vid-progress-fill');
+    if (fillEl) fillEl.style.width = `${progressPercent.toFixed(1)}%`;
+
+    const currEl = document.getElementById('yt-pa-vid-current');
+    const totEl = document.getElementById('yt-pa-vid-total');
+    if (currEl) currEl.textContent = formatTime(Math.round(currentTime));
+    if (totEl) totEl.textContent = formatTime(Math.round(duration));
+
+    // Finish badge
+    const adjustedRemaining = remainingSeconds / currentSpeed;
+    const endDate = new Date(Date.now() + adjustedRemaining * 1000);
+    const endClockStr = endDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+    const clockEl = document.getElementById('yt-pa-vid-end-clock');
+    const remainEl = document.getElementById('yt-pa-vid-remain-text');
+    if (clockEl) clockEl.textContent = endClockStr;
+    if (remainEl) remainEl.textContent = `${formatDuration(Math.round(adjustedRemaining))} left (${currentSpeed}x)`;
+
+    // Speeds table
+    const speedsTable = document.getElementById('yt-pa-vid-speeds-table');
+    const speeds = [1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+
+    if (speedsTable) {
+      speedsTable.innerHTML = speeds.map(sp => {
+        const spRemaining = Math.max(0, remainingSeconds / sp);
+        const spFinish = new Date(Date.now() + spRemaining * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        const isCurrent = Math.abs(currentSpeed - sp) < 0.05;
+        return `
+          <div class="yt-pa-vid-speed-row ${isCurrent ? 'active' : ''}" data-speed="${sp}">
+            <div class="yt-pa-vid-speed-left">
+              <span class="yt-pa-vid-speed-badge ${isCurrent ? 'current' : ''}">${sp}x</span>
+              <span class="yt-pa-vid-speed-status">${isCurrent ? 'Active' : ''}</span>
+            </div>
+            <div class="yt-pa-vid-speed-center">
+              <span class="yt-pa-vid-speed-time">${formatDuration(Math.round(spRemaining))} left</span>
+              <span class="yt-pa-vid-speed-finish">Ends at ${spFinish}</span>
+            </div>
+            <button class="yt-pa-vid-set-speed-btn ${isCurrent ? 'active' : ''}" data-speed="${sp}">${isCurrent ? 'Current' : 'Set ' + sp + 'x'}</button>
+          </div>
+        `;
+      }).join('');
+
+      speedsTable.querySelectorAll('.yt-pa-vid-set-speed-btn, .yt-pa-vid-speed-row').forEach(el => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const targetSpeed = parseFloat(el.dataset.speed);
+          if (!isNaN(targetSpeed) && video) {
+            video.playbackRate = targetSpeed;
+            updateVideoAnalysisUI();
+          }
+        });
+      });
+    }
+
+    // Time saved grid
+    const tsGrid = document.getElementById('yt-pa-vid-time-saved-grid');
+    if (tsGrid) {
+      const baseRemaining = remainingSeconds; // at 1x
+      tsGrid.innerHTML = [1.25, 1.5, 2, 3].map(sp => {
+        const saved = Math.max(0, baseRemaining - Math.round(baseRemaining / sp));
+        return `
+          <div class="yt-pa-ts-item">
+            <div class="yt-pa-ts-speed">At ${sp}x</div>
+            <div class="yt-pa-ts-value">${formatDuration(saved)}</div>
+          </div>
+        `;
+      }).join('');
     }
   }
 
@@ -637,6 +843,7 @@
           if (panel) panel.classList.remove('open');
           if (btn) btn.classList.remove('active');
         }
+        stopVideoAnalyzer();
         setTimeout(() => {
           if (!isContextValid()) return;
           if (!document.getElementById('yt-playlist-analyzer-btn')) {
