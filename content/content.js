@@ -413,9 +413,8 @@
               <div class="yt-pa-rem-header">
                 <span class="yt-pa-rem-badge" id="yt-pa-rem-badge">Now at Video 1</span>
                 <div class="yt-pa-rem-ctrl">
-                  <span class="yt-pa-rem-label-from">From #</span>
-                  <input type="number" id="yt-pa-rem-input" class="yt-pa-rem-input" min="1" value="1">
-                  <span id="yt-pa-rem-total-label" class="yt-pa-rem-total-label">of 1</span>
+                  <span class="yt-pa-rem-label-from">From:</span>
+                  <select id="yt-pa-from-vid-select" class="yt-pa-from-vid-select"></select>
                 </div>
               </div>
               <div class="yt-pa-rem-grid">
@@ -592,10 +591,10 @@
     }
 
     // Custom calculator & remaining inputs
-    const remInput = document.getElementById('yt-pa-rem-input');
-    if (remInput) {
-      remInput.addEventListener('input', () => {
-        updateInlineRemaining(remInput.value);
+    const fromVidSelect = document.getElementById('yt-pa-from-vid-select');
+    if (fromVidSelect) {
+      fromVidSelect.addEventListener('change', () => {
+        updateInlineRemaining(fromVidSelect.value);
       });
     }
     const customScope = document.getElementById('yt-pa-custom-scope');
@@ -997,12 +996,17 @@
       </div>
     `;
 
-    // Initialize remaining progress card
+    // Initialize remaining progress card with video dropdown
     const initialFromIdx = playlistData.currentVideoIndex || 1;
-    const remInput = document.getElementById('yt-pa-rem-input');
-    if (remInput) {
-      remInput.max = playlistData.videos.length;
-      remInput.value = initialFromIdx;
+    const fromVidSelect = document.getElementById('yt-pa-from-vid-select');
+    if (fromVidSelect && playlistData.videos) {
+      fromVidSelect.innerHTML = playlistData.videos.map(v => {
+        const cleanTitle = (v.title || '').replace(/\s+/g, ' ').trim();
+        const shortTitle = cleanTitle.length > 24 ? cleanTitle.substring(0, 22) + '…' : cleanTitle;
+        const dur = v.durationFormatted ? ` (${v.durationFormatted})` : '';
+        return `<option value="${v.index}">Video ${v.index}: ${escapeHtml(shortTitle)}${dur}</option>`;
+      }).join('');
+      fromVidSelect.value = initialFromIdx;
     }
     updateInlineRemaining(initialFromIdx);
 
@@ -1014,9 +1018,9 @@
     const total = playlistData.videos.length;
     fromIdx = Math.max(1, Math.min(parseInt(fromIdx, 10) || 1, total));
 
-    const remInput = document.getElementById('yt-pa-rem-input');
-    if (remInput && parseInt(remInput.value, 10) !== fromIdx) {
-      remInput.value = fromIdx;
+    const fromVidSelect = document.getElementById('yt-pa-from-vid-select');
+    if (fromVidSelect && parseInt(fromVidSelect.value, 10) !== fromIdx) {
+      fromVidSelect.value = fromIdx;
     }
 
     const remVideos = playlistData.videos.slice(fromIdx - 1);
@@ -1027,14 +1031,11 @@
       badge.textContent = fromIdx > 1 ? `Now at Video ${fromIdx}` : `Full Playlist (${total} vids)`;
     }
 
-    const totLabel = document.getElementById('yt-pa-rem-total-label');
-    if (totLabel) totLabel.textContent = `of ${total}`;
-
     const durEl = document.getElementById('yt-pa-rem-dur');
     if (durEl) durEl.textContent = formatDuration(remSeconds);
 
     const countEl = document.getElementById('yt-pa-rem-count');
-    if (countEl) countEl.textContent = `${remVideos.length} vids`;
+    if (countEl) countEl.textContent = `${remVideos.length} vids left`;
 
     const at15xEl = document.getElementById('yt-pa-rem-15x');
     if (at15xEl) at15xEl.textContent = formatDuration(Math.round(remSeconds / 1.5));
@@ -1053,7 +1054,7 @@
 
     let targetSeconds = analysisData.totalSeconds;
     if (scope === 'remaining') {
-      const fromIdx = Math.max(1, Math.min(parseInt(document.getElementById('yt-pa-rem-input')?.value, 10) || 1, playlistData.videos.length));
+      const fromIdx = Math.max(1, Math.min(parseInt(document.getElementById('yt-pa-from-vid-select')?.value, 10) || 1, playlistData.videos.length));
       const remVideos = playlistData.videos.slice(fromIdx - 1);
       targetSeconds = remVideos.reduce((sum, v) => sum + v.durationSeconds, 0);
     }

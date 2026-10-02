@@ -797,31 +797,26 @@
 .yt-pa-rem-ctrl {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   font-size: 11px;
   color: #aaaaaa;
 }
 
-.yt-pa-rem-input {
-  width: 44px;
-  padding: 2px 4px;
+.yt-pa-from-vid-select {
+  max-width: 175px;
+  padding: 3px 6px;
   background: #141414;
   border: 1px solid #383838;
-  border-radius: 4px;
+  border-radius: 6px;
   color: #f1f1f1;
   font-size: 11px;
-  text-align: center;
   font-family: inherit;
+  cursor: pointer;
 }
 
-.yt-pa-rem-input:focus {
+.yt-pa-from-vid-select:focus {
   outline: none;
   border-color: #ff0000;
-}
-
-.yt-pa-rem-total-label {
-  font-size: 11px;
-  color: #717171;
 }
 
 .yt-pa-rem-grid {

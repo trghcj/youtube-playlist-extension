@@ -21,10 +21,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   let currentPlaylistData = null;
 
   // Tab navigation
-  document.querySelectorAll('.tab').forEach(tab => {
+  document.querySelectorAll('.yt-pa-tab').forEach(tab => {
     tab.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      document.querySelectorAll('.yt-pa-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.yt-pa-tab-content').forEach(c => c.classList.remove('active'));
       tab.classList.add('active');
       const targetContent = document.getElementById(`tab-${tab.dataset.tab}`);
       if (targetContent) targetContent.classList.add('active');
@@ -47,7 +47,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  document.querySelectorAll('.panel-close').forEach(btn => {
+  document.querySelectorAll('.yt-pa-panel-close').forEach(btn => {
     btn.addEventListener('click', () => {
       const target = document.getElementById(btn.dataset.close);
       if (target) target.classList.add('hidden');
@@ -66,11 +66,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Remaining watch time input
-  const fromVideoInput = document.getElementById('fromVideoIndex');
-  if (fromVideoInput) {
-    fromVideoInput.addEventListener('input', () => {
-      updateRemainingStats(fromVideoInput.value);
+  // Remaining watch time dropdown
+  const fromVideoSelect = document.getElementById('fromVideoSelect');
+  if (fromVideoSelect) {
+    fromVideoSelect.addEventListener('change', () => {
+      updateRemainingStats(fromVideoSelect.value);
     });
   }
 
@@ -78,7 +78,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const customHours = document.getElementById('customHours');
   const customSpeed = document.getElementById('customSpeed');
   const scheduleScope = document.getElementById('scheduleScope');
-  if (customHours) customHours.addEventListener('input', updateCustomSchedule);
+  if (customHours) customHours.addEventListener('change', updateCustomSchedule);
   if (customSpeed) customSpeed.addEventListener('change', updateCustomSchedule);
   if (scheduleScope) scheduleScope.addEventListener('change', updateCustomSchedule);
 
@@ -91,9 +91,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Sort buttons
-  document.querySelectorAll('.sort-btn').forEach(btn => {
+  document.querySelectorAll('.yt-pa-sort-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.yt-pa-sort-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       sortVideos(btn.dataset.sort);
     });
@@ -145,7 +145,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         response = await chrome.tabs.sendMessage(tab.id, { type: 'EXTRACT_PLAYLIST_DATA' });
       } catch (connErr) {
-        // Tab was open before extension was installed or reloaded
         console.warn('Content script not yet connected to tab:', connErr?.message);
         if (errorTitleEl) errorTitleEl.textContent = 'Refresh Required';
         if (errorTextEl) errorTextEl.textContent = 'Please refresh this YouTube page (F5) once so the extension can connect.';
@@ -235,19 +234,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const titleEl = document.getElementById('playlistTitle');
     if (titleEl) titleEl.textContent = currentPlaylistData.playlistTitle || 'YouTube Playlist';
 
-    const channelEl = document.getElementById('playlistChannel');
-    if (channelEl) channelEl.textContent = currentPlaylistData.channelName || '';
-
-    // Initialize remaining watch time card
+    // Populate video dropdown
     const initialFromIndex = currentPlaylistData.currentVideoIndex || 1;
-    const fromVidInput = document.getElementById('fromVideoIndex');
-    const totalCountLbl = document.getElementById('totalVideosCountLabel');
-    if (fromVidInput) {
-      fromVidInput.max = currentPlaylistData.videos.length;
-      fromVidInput.value = initialFromIndex;
-    }
-    if (totalCountLbl) {
-      totalCountLbl.textContent = `of ${currentPlaylistData.videos.length}`;
+    const fromVidSelect = document.getElementById('fromVideoSelect');
+    if (fromVidSelect && currentPlaylistData.videos) {
+      fromVidSelect.innerHTML = currentPlaylistData.videos.map(v => {
+        const cleanTitle = (v.title || '').replace(/\s+/g, ' ').trim();
+        const shortTitle = cleanTitle.length > 24 ? cleanTitle.substring(0, 22) + '…' : cleanTitle;
+        const dur = v.durationFormatted ? ` (${v.durationFormatted})` : '';
+        return `<option value="${v.index}">Video ${v.index}: ${escapeHtml(shortTitle)}${dur}</option>`;
+      }).join('');
+      fromVidSelect.value = initialFromIndex;
     }
     updateRemainingStats(initialFromIndex);
 
@@ -265,24 +262,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     const at2xDurationEl = document.getElementById('at2xDuration');
     if (at2xDurationEl) at2xDurationEl.textContent = at2x ? at2x.formatted : '--';
 
-    // Quick stats
-    const shortestVideoEl = document.getElementById('shortestVideo');
-    if (shortestVideoEl) {
-      shortestVideoEl.textContent = currentAnalysis.shortest
-        ? `${currentAnalysis.shortest.duration} - ${truncate(currentAnalysis.shortest.title, 30)}`
-        : '--';
+    // Shortest / Longest
+    const shortestEl = document.getElementById('shortestVideo');
+    if (shortestEl) {
+      if (currentAnalysis.shortest) {
+        const s = currentAnalysis.shortest;
+        const title = s.title.length > 36 ? s.title.substring(0, 34) + '...' : s.title;
+        shortestEl.innerHTML = `
+          <span class="yt-pa-ov-ext-title" title="${escapeHtml(s.title)}">${escapeHtml(title)}</span>
+          <span class="yt-pa-ov-ext-time">${s.duration}</span>
+        `;
+      } else {
+        shortestEl.textContent = '--';
+      }
     }
 
-    const longestVideoEl = document.getElementById('longestVideo');
-    if (longestVideoEl) {
-      longestVideoEl.textContent = currentAnalysis.longest
-        ? `${currentAnalysis.longest.duration} - ${truncate(currentAnalysis.longest.title, 30)}`
-        : '--';
+    const longestEl = document.getElementById('longestVideo');
+    if (longestEl) {
+      if (currentAnalysis.longest) {
+        const l = currentAnalysis.longest;
+        const title = l.title.length > 36 ? l.title.substring(0, 34) + '...' : l.title;
+        longestEl.innerHTML = `
+          <span class="yt-pa-ov-ext-title" title="${escapeHtml(l.title)}">${escapeHtml(title)}</span>
+          <span class="yt-pa-ov-ext-time">${l.duration}</span>
+        `;
+      } else {
+        longestEl.textContent = '--';
+      }
     }
-
-    const unavailable = ((currentPlaylistData.videos) || []).filter(v => v.isUnavailable).length;
-    const unavailableCountEl = document.getElementById('unavailableCount');
-    if (unavailableCountEl) unavailableCountEl.textContent = unavailable > 0 ? `${unavailable} videos` : 'None';
 
     // Speeds tab
     renderSpeeds();
@@ -302,9 +309,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const total = currentPlaylistData.videos.length;
     fromIndex = Math.max(1, Math.min(parseInt(fromIndex, 10) || 1, total));
 
-    const fromVidInput = document.getElementById('fromVideoIndex');
-    if (fromVidInput && parseInt(fromVidInput.value, 10) !== fromIndex) {
-      fromVidInput.value = fromIndex;
+    const fromVidSelect = document.getElementById('fromVideoSelect');
+    if (fromVidSelect && parseInt(fromVidSelect.value, 10) !== fromIndex) {
+      fromVidSelect.value = fromIndex;
     }
 
     const remainingVideos = currentPlaylistData.videos.slice(fromIndex - 1);
@@ -319,7 +326,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (durEl) durEl.textContent = formatDuration(remainingSeconds);
 
     const countEl = document.getElementById('remainingCount');
-    if (countEl) countEl.textContent = `${remainingVideos.length} videos left`;
+    if (countEl) countEl.textContent = `${remainingVideos.length} vids left`;
 
     const at15xEl = document.getElementById('remainingAt1_5x');
     if (at15xEl) at15xEl.textContent = formatDuration(Math.round(remainingSeconds / 1.5));
@@ -352,12 +359,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       const percentage = totalSeconds > 0 ? (item.totalSeconds / totalSeconds) * 100 : 0;
       const isRecommended = item.speed === 1.5;
       return `
-        <div class="speed-item ${isRecommended ? 'recommended' : ''}">
-          <span class="speed-badge">${item.speed}x</span>
-          <div class="speed-bar-container">
-            <div class="speed-bar" style="width: ${percentage}%"></div>
+        <div class="yt-pa-speed-row ${isRecommended ? 'active' : ''}">
+          <span class="yt-pa-speed-label">${item.speed}×</span>
+          <div class="yt-pa-speed-bar-bg">
+            <div class="yt-pa-speed-bar-fill" style="width: ${percentage}%"></div>
           </div>
-          <span class="speed-duration">${item.formatted}</span>
+          <span class="yt-pa-speed-val">${item.formatted}</span>
         </div>
       `;
     }).join('');
@@ -368,9 +375,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       timeSavedContainer.innerHTML = speedsToShow.map(speed => {
         const saved = totalSeconds - Math.round(totalSeconds / speed);
         return `
-          <div class="time-saved-item">
-            <div class="time-saved-speed">At ${speed}x</div>
-            <div class="time-saved-value">${formatDuration(saved)}</div>
+          <div class="yt-pa-ts-row">
+            <span class="yt-pa-ts-label">At ${speed}×</span>
+            <span class="yt-pa-ts-val">${formatDuration(saved)}</span>
           </div>
         `;
       }).join('');
@@ -382,20 +389,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!container || !currentAnalysis || !currentAnalysis.dailySchedules) return;
 
     container.innerHTML = `
-      <div class="schedule-item header">
-        <span>Watch Time</span>
-        <span>1x</span>
-        <span>1.5x</span>
-        <span>2x</span>
+      <div class="yt-pa-sched-header">
+        <span class="yt-pa-sched-col-time">Watch time / day</span>
+        <span class="yt-pa-sched-col">1×</span>
+        <span class="yt-pa-sched-col yt-pa-sched-col-active">1.5×</span>
+        <span class="yt-pa-sched-col">2×</span>
       </div>
-      ${currentAnalysis.dailySchedules.map(schedule => `
-        <div class="schedule-item">
-          <span class="schedule-label">${schedule.label}</span>
-          <span class="schedule-value">${schedule.days} day${schedule.days !== 1 ? 's' : ''}</span>
-          <span class="schedule-value highlight">${schedule.daysAt1_5x} day${schedule.daysAt1_5x !== 1 ? 's' : ''}</span>
-          <span class="schedule-value">${schedule.daysAt2x} day${schedule.daysAt2x !== 1 ? 's' : ''}</span>
-        </div>
-      `).join('')}
+      <div class="yt-pa-sched-body">
+        ${currentAnalysis.dailySchedules.map(schedule => `
+          <div class="yt-pa-sched-row">
+            <span class="yt-pa-sched-col-time">${schedule.label}</span>
+            <span class="yt-pa-sched-col">${schedule.days}d</span>
+            <span class="yt-pa-sched-col yt-pa-sched-col-active">${schedule.daysAt1_5x}d</span>
+            <span class="yt-pa-sched-col">${schedule.daysAt2x}d</span>
+          </div>
+        `).join('')}
+      </div>
     `;
   }
 
@@ -403,8 +412,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const container = document.getElementById('videosList');
     if (!container || !currentPlaylistData || !currentPlaylistData.videos) return;
 
-    const fromVidInput = document.getElementById('fromVideoIndex');
-    const currentFromIndex = fromVidInput ? (parseInt(fromVidInput.value, 10) || 1) : 1;
+    const fromVidSelect = document.getElementById('fromVideoSelect');
+    const currentFromIndex = fromVidSelect ? (parseInt(fromVidSelect.value, 10) || 1) : 1;
 
     const videoData = videos || currentPlaylistData.videos;
 
@@ -428,6 +437,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Click to open video or select as starting point
     container.querySelectorAll('.video-item').forEach(item => {
       item.addEventListener('click', () => {
+        const idx = parseInt(item.dataset.index, 10);
+        if (fromVidSelect && !isNaN(idx)) {
+          fromVidSelect.value = idx;
+          updateRemainingStats(idx);
+        }
         const url = item.dataset.url;
         if (url) {
           chrome.tabs.create({ url });
@@ -475,8 +489,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let targetSeconds = currentAnalysis.totalSeconds || 0;
     if (scope === 'remaining') {
-      const fromVidInput = document.getElementById('fromVideoIndex');
-      const fromIdx = Math.max(1, Math.min(parseInt(fromVidInput?.value, 10) || 1, currentPlaylistData.videos.length));
+      const fromVidSelect = document.getElementById('fromVideoSelect');
+      const fromIdx = Math.max(1, Math.min(parseInt(fromVidSelect?.value, 10) || 1, currentPlaylistData.videos.length));
       const remVideos = currentPlaylistData.videos.slice(fromIdx - 1);
       targetSeconds = remVideos.reduce((sum, v) => sum + (v.durationSeconds || 0), 0);
     }
@@ -486,7 +500,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const customDaysEl = document.getElementById('customDays');
     if (customDaysEl) {
-      customDaysEl.textContent = isFinite(days) ? days : '--';
+      customDaysEl.textContent = isFinite(days) ? `${days} day${days !== 1 ? 's' : ''}` : '--';
     }
   }
 
@@ -498,7 +512,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const response = await chrome.runtime.sendMessage({ type: 'GET_HISTORY' });
 
       if (!response || !response.success || !response.data || response.data.length === 0) {
-        historyList.innerHTML = '<p class="empty-text">No playlists analyzed yet</p>';
+        historyList.innerHTML = '<p class="yt-pa-empty-text">No playlists analyzed yet</p>';
         return;
       }
 
@@ -520,7 +534,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     } catch (e) {
       console.warn('Failed to load history:', e);
-      historyList.innerHTML = '<p class="empty-text">Failed to load history</p>';
+      historyList.innerHTML = '<p class="yt-pa-empty-text">Failed to load history</p>';
     }
   }
 
@@ -574,12 +588,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
 
     return parts.join(' ');
-  }
-
-  function truncate(str, length) {
-    if (!str) return '';
-    if (str.length <= length) return str;
-    return str.substring(0, length) + '...';
   }
 
   function escapeHtml(str) {
