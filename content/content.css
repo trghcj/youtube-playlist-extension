@@ -777,14 +777,15 @@
 
 .yt-pa-rem-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 
 .yt-pa-rem-badge {
   display: inline-flex;
   align-items: center;
+  align-self: flex-start;
   padding: 2px 7px;
   background: rgba(255, 0, 0, 0.15);
   border: 1px solid rgba(255, 0, 0, 0.35);
@@ -792,19 +793,30 @@
   font-size: 11px;
   font-weight: 600;
   border-radius: 4px;
+  white-space: nowrap;
 }
 
 .yt-pa-rem-ctrl {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  width: 100%;
+}
+
+.yt-pa-rem-label-from {
   font-size: 11px;
   color: #aaaaaa;
+  font-weight: 500;
+  flex-shrink: 0;
 }
 
 .yt-pa-from-vid-select {
-  max-width: 175px;
-  padding: 3px 6px;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 4px 8px;
   background: #141414;
   border: 1px solid #383838;
   border-radius: 6px;
@@ -812,6 +824,9 @@
   font-size: 11px;
   font-family: inherit;
   cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .yt-pa-from-vid-select:focus {

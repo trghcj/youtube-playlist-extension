@@ -113,7 +113,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Start analysis automatically
   startAnalysis();
 
+  let videoPollTimer = null;
+
+  function stopVideoAnalyzer() {
+    if (videoPollTimer) {
+      clearInterval(videoPollTimer);
+      videoPollTimer = null;
+    }
+  }
+
+  window.addEventListener('unload', stopVideoAnalyzer);
+
   async function startAnalysis() {
+    stopVideoAnalyzer();
+
     // Reset retry button to default behavior
     if (retryBtn) {
       retryBtn.textContent = 'Try Again';
@@ -125,7 +138,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (statusTextEl) statusTextEl.textContent = 'Checking page...';
 
     try {
-      // Check if current tab is a YouTube playlist
+      // Check if current tab is a YouTube page
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
       if (!tab || !tab.url || !tab.url.includes('youtube.com')) {
@@ -133,84 +146,269 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      if (!tab.url.includes('list=') && !tab.url.includes('/playlist')) {
+      const isWatch = tab.url.includes('/watch') || tab.url.includes('/shorts/');
+      const hasPlaylist = tab.url.includes('list=') || tab.url.includes('/playlist');
+
+      if (!isWatch && !hasPlaylist) {
         showView('notPlaylist');
         return;
       }
 
-      if (statusTextEl) statusTextEl.textContent = 'Extracting playlist data...';
-
-      // Request data from content script with graceful connection handling
-      let response;
-      try {
-        response = await chrome.tabs.sendMessage(tab.id, { type: 'EXTRACT_PLAYLIST_DATA' });
-      } catch (connErr) {
-        console.warn('Content script not yet connected to tab:', connErr?.message);
-        if (errorTitleEl) errorTitleEl.textContent = 'Refresh Required';
-        if (errorTextEl) errorTextEl.textContent = 'Please refresh this YouTube page (F5) once so the extension can connect.';
-        if (retryBtn) {
-          retryBtn.textContent = 'Refresh YouTube Page';
-          retryBtn.onclick = async () => {
-            if (tab && tab.id) {
-              await chrome.tabs.reload(tab.id);
-            }
-            window.close();
-          };
-        }
-        showView('error');
+      if (isWatch && !hasPlaylist) {
+        // Single video mode
+        await startSingleVideoMode(tab.id);
         return;
       }
 
-      if (!response || !response.success) {
-        throw new Error(response?.error || 'Failed to extract playlist data');
-      }
-
-      currentPlaylistData = response.data;
-      const count = currentPlaylistData && currentPlaylistData.videos ? currentPlaylistData.videos.length : 0;
-      if (statusTextEl) statusTextEl.textContent = `Analyzing ${count} videos...`;
-
-      // Send to background for analysis with currentVideoIndex
-      const analysisResponse = await chrome.runtime.sendMessage({
-        type: 'ANALYZE_PLAYLIST',
-        data: {
-          videos: currentPlaylistData.videos,
-          currentVideoIndex: currentPlaylistData.currentVideoIndex || 1
-        }
-      });
-
-      if (!analysisResponse || !analysisResponse.success) {
-        throw new Error(analysisResponse?.error || 'Analysis failed');
-      }
-
-      currentAnalysis = analysisResponse.data;
-
-      // Save to history
-      const saveHistoryEl = document.getElementById('saveHistory');
-      const saveHistoryEnabled = saveHistoryEl ? saveHistoryEl.checked : true;
-      if (saveHistoryEnabled) {
-        chrome.runtime.sendMessage({
-          type: 'SAVE_HISTORY',
-          data: {
-            playlistTitle: currentPlaylistData.playlistTitle,
-            playlistUrl: currentPlaylistData.playlistUrl,
-            totalVideos: currentAnalysis.totalVideos,
-            totalDuration: currentAnalysis.totalDuration,
-            totalSeconds: currentAnalysis.totalSeconds
-          }
-        });
-      }
-
-      // Render results
-      renderResults();
-      showView('main');
+      // Playlist mode
+      await startPlaylistMode(tab);
 
     } catch (error) {
       console.warn('Analysis error handled:', error);
       if (errorTextEl) {
-        errorTextEl.textContent = error.message || 'Something went wrong. Make sure you\'re on a YouTube playlist page.';
+        errorTextEl.textContent = error.message || 'Something went wrong. Make sure you\'re on a YouTube playlist or video page.';
       }
       showView('error');
     }
+  }
+
+  async function startSingleVideoMode(tabId) {
+    const headerTitleEl = document.getElementById('headerTitle');
+    const topNavEl = document.getElementById('topNav');
+    const playlistTabsWrapper = document.getElementById('playlistTabsWrapper');
+    const videoResultsEl = document.getElementById('videoResults');
+
+    if (headerTitleEl) headerTitleEl.textContent = 'Video Analyzer';
+    if (topNavEl) topNavEl.classList.add('hidden');
+    if (playlistTabsWrapper) playlistTabsWrapper.style.display = 'none';
+    if (videoResultsEl) videoResultsEl.style.display = 'flex';
+
+    initVideoModeDOM(tabId);
+
+    const ok = await updateSingleVideoUI(tabId);
+    if (!ok) return;
+
+    showView('main');
+
+    // Poll every 1 second while popup is open to keep progress and clocks live
+    videoPollTimer = setInterval(async () => {
+      await updateSingleVideoUI(tabId);
+    }, 1000);
+  }
+
+  function initVideoModeDOM(tabId) {
+    const speedsTable = document.getElementById('vidSpeedsTable');
+    const tsGrid = document.getElementById('vidTimeSavedGrid');
+    const speeds = [1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+
+    if (speedsTable && !speedsTable.hasChildNodes()) {
+      speedsTable.innerHTML = speeds.map(sp => `
+        <div class="yt-pa-vid-speed-row" data-speed="${sp}">
+          <span class="yt-pa-vid-speed-label">${sp}×</span>
+          <span class="yt-pa-vid-speed-time">--</span>
+          <span class="yt-pa-vid-speed-finish">--</span>
+          <button class="yt-pa-vid-set-speed-btn" data-speed="${sp}">Set ${sp}×</button>
+        </div>
+      `).join('');
+
+      speedsTable.querySelectorAll('.yt-pa-vid-speed-row').forEach(row => {
+        row.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const targetSpeed = parseFloat(row.dataset.speed);
+          if (!isNaN(targetSpeed)) {
+            try {
+              await chrome.tabs.sendMessage(tabId, { type: 'SET_PLAYBACK_SPEED', speed: targetSpeed });
+              await updateSingleVideoUI(tabId);
+            } catch (err) {
+              console.warn('Failed to set speed:', err);
+            }
+          }
+        });
+      });
+    }
+
+    if (tsGrid && !tsGrid.hasChildNodes()) {
+      tsGrid.innerHTML = [1.25, 1.5, 2, 3].map(sp => `
+        <div class="yt-pa-ts-row" data-speed="${sp}">
+          <span class="yt-pa-ts-label">At ${sp}×</span>
+          <span class="yt-pa-ts-val">--</span>
+        </div>
+      `).join('');
+    }
+  }
+
+  async function updateSingleVideoUI(tabId) {
+    let response;
+    try {
+      response = await chrome.tabs.sendMessage(tabId, { type: 'GET_VIDEO_DATA' });
+    } catch (connErr) {
+      console.warn('Content script not reachable:', connErr?.message);
+      if (errorTitleEl) errorTitleEl.textContent = 'Refresh Required';
+      if (errorTextEl) errorTextEl.textContent = 'Please refresh this YouTube page (F5) once so the extension can connect.';
+      if (retryBtn) {
+        retryBtn.textContent = 'Refresh YouTube Page';
+        retryBtn.onclick = async () => {
+          await chrome.tabs.reload(tabId);
+          window.close();
+        };
+      }
+      showView('error');
+      stopVideoAnalyzer();
+      return false;
+    }
+
+    if (!response || !response.success || !response.data) {
+      if (errorTitleEl) errorTitleEl.textContent = 'No Video Found';
+      if (errorTextEl) errorTextEl.textContent = response?.error || 'Make sure a video is playing on this page.';
+      showView('error');
+      stopVideoAnalyzer();
+      return false;
+    }
+
+    const { title, channel, currentTime, duration, playbackRate } = response.data;
+    if (isNaN(duration) || duration <= 0) return true;
+
+    const vidTitle = document.getElementById('vidTitle');
+    const vidChannel = document.getElementById('vidChannel');
+    if (vidTitle && vidTitle.textContent !== title) vidTitle.textContent = title || 'YouTube Video';
+    if (vidChannel && vidChannel.textContent !== channel) vidChannel.textContent = channel || '';
+
+    const currentSpeed = playbackRate || 1;
+    const remainingSeconds = Math.max(0, duration - currentTime);
+    const progressPercent = Math.min(100, Math.max(0, (currentTime / duration) * 100));
+
+    const fillEl = document.getElementById('vidProgressFill');
+    if (fillEl) fillEl.style.width = `${progressPercent.toFixed(1)}%`;
+
+    const currEl = document.getElementById('vidCurrentTime');
+    const totEl = document.getElementById('vidTotalTime');
+    if (currEl) currEl.textContent = formatTime(Math.round(currentTime));
+    if (totEl) totEl.textContent = formatTime(Math.round(duration));
+
+    const adjustedRemaining = remainingSeconds / currentSpeed;
+    const endDate = new Date(Date.now() + adjustedRemaining * 1000);
+    const endClockStr = endDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+    const clockEl = document.getElementById('vidEndClock');
+    const remainEl = document.getElementById('vidRemainText');
+    if (clockEl) clockEl.textContent = endClockStr;
+    if (remainEl) remainEl.textContent = `${formatDuration(Math.round(adjustedRemaining))} left (${currentSpeed}×)`;
+
+    const speedsTable = document.getElementById('vidSpeedsTable');
+    if (speedsTable) {
+      speedsTable.querySelectorAll('.yt-pa-vid-speed-row').forEach(row => {
+        const sp = parseFloat(row.dataset.speed);
+        if (isNaN(sp)) return;
+        const spRemaining = Math.max(0, remainingSeconds / sp);
+        const spFinish = new Date(Date.now() + spRemaining * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        const isCurrent = Math.abs(currentSpeed - sp) < 0.05;
+
+        row.classList.toggle('active', isCurrent);
+
+        const timeEl = row.querySelector('.yt-pa-vid-speed-time');
+        if (timeEl) timeEl.textContent = `${formatDuration(Math.round(spRemaining))} left`;
+
+        const finishEl = row.querySelector('.yt-pa-vid-speed-finish');
+        if (finishEl) finishEl.textContent = `Ends at ${spFinish}`;
+
+        const btnEl = row.querySelector('.yt-pa-vid-set-speed-btn');
+        if (btnEl) {
+          btnEl.classList.toggle('active', isCurrent);
+          btnEl.textContent = isCurrent ? 'Active' : `Set ${sp}×`;
+        }
+      });
+    }
+
+    const tsGrid = document.getElementById('vidTimeSavedGrid');
+    if (tsGrid) {
+      const baseRemaining = remainingSeconds;
+      tsGrid.querySelectorAll('.yt-pa-ts-row').forEach(item => {
+        const sp = parseFloat(item.dataset.speed);
+        if (isNaN(sp)) return;
+        const saved = Math.max(0, baseRemaining - Math.round(baseRemaining / sp));
+        const valEl = item.querySelector('.yt-pa-ts-val');
+        if (valEl) valEl.textContent = formatDuration(saved);
+      });
+    }
+
+    return true;
+  }
+
+  async function startPlaylistMode(tab) {
+    const headerTitleEl = document.getElementById('headerTitle');
+    const topNavEl = document.getElementById('topNav');
+    const playlistTabsWrapper = document.getElementById('playlistTabsWrapper');
+    const videoResultsEl = document.getElementById('videoResults');
+
+    if (headerTitleEl) headerTitleEl.textContent = 'Playlist Analyzer';
+    if (topNavEl) topNavEl.classList.remove('hidden');
+    if (playlistTabsWrapper) playlistTabsWrapper.style.display = 'block';
+    if (videoResultsEl) videoResultsEl.style.display = 'none';
+
+    if (statusTextEl) statusTextEl.textContent = 'Extracting playlist data...';
+
+    let response;
+    try {
+      response = await chrome.tabs.sendMessage(tab.id, { type: 'EXTRACT_PLAYLIST_DATA' });
+    } catch (connErr) {
+      console.warn('Content script not yet connected to tab:', connErr?.message);
+      if (errorTitleEl) errorTitleEl.textContent = 'Refresh Required';
+      if (errorTextEl) errorTextEl.textContent = 'Please refresh this YouTube page (F5) once so the extension can connect.';
+      if (retryBtn) {
+        retryBtn.textContent = 'Refresh YouTube Page';
+        retryBtn.onclick = async () => {
+          if (tab && tab.id) {
+            await chrome.tabs.reload(tab.id);
+          }
+          window.close();
+        };
+      }
+      showView('error');
+      return;
+    }
+
+    if (!response || !response.success) {
+      throw new Error(response?.error || 'Failed to extract playlist data');
+    }
+
+    currentPlaylistData = response.data;
+    const count = currentPlaylistData && currentPlaylistData.videos ? currentPlaylistData.videos.length : 0;
+    if (statusTextEl) statusTextEl.textContent = `Analyzing ${count} videos...`;
+
+    // Send to background for analysis with currentVideoIndex
+    const analysisResponse = await chrome.runtime.sendMessage({
+      type: 'ANALYZE_PLAYLIST',
+      data: {
+        videos: currentPlaylistData.videos,
+        currentVideoIndex: currentPlaylistData.currentVideoIndex || 1
+      }
+    });
+
+    if (!analysisResponse || !analysisResponse.success) {
+      throw new Error(analysisResponse?.error || 'Analysis failed');
+    }
+
+    currentAnalysis = analysisResponse.data;
+
+    // Save to history
+    const saveHistoryEl = document.getElementById('saveHistory');
+    const saveHistoryEnabled = saveHistoryEl ? saveHistoryEl.checked : true;
+    if (saveHistoryEnabled) {
+      chrome.runtime.sendMessage({
+        type: 'SAVE_HISTORY',
+        data: {
+          playlistTitle: currentPlaylistData.playlistTitle,
+          playlistUrl: currentPlaylistData.playlistUrl,
+          totalVideos: currentAnalysis.totalVideos,
+          totalDuration: currentAnalysis.totalDuration,
+          totalSeconds: currentAnalysis.totalSeconds
+        }
+      });
+    }
+
+    // Render results
+    renderResults();
+    showView('main');
   }
 
   function showView(view) {
@@ -218,6 +416,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (notPlaylistEl) notPlaylistEl.classList.add('hidden');
     if (errorStateEl) errorStateEl.classList.add('hidden');
     if (mainContentEl) mainContentEl.classList.add('hidden');
+
+    const topNavEl = document.getElementById('topNav');
+    if (view !== 'main') {
+      if (topNavEl) topNavEl.classList.add('hidden');
+    }
 
     switch (view) {
       case 'status': if (statusEl) statusEl.classList.remove('hidden'); break;
@@ -588,6 +791,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
 
     return parts.join(' ');
+  }
+
+  function formatTime(seconds) {
+    if (isNaN(seconds) || seconds < 0) return '0:00';
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+
+    if (hrs > 0) {
+      return `${hrs}:${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    }
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   }
 
   function escapeHtml(str) {

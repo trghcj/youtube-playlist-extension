@@ -39,6 +39,46 @@
         sendResponse({ isPlaylist, url: window.location.href });
         return false;
       }
+
+      if (message.type === 'GET_VIDEO_DATA') {
+        try {
+          const video = document.querySelector('video.html5-main-video') || document.querySelector('video');
+          if (!video) {
+            sendResponse({ success: false, error: 'No video element found on page' });
+            return false;
+          }
+          const meta = getVideoMeta();
+          sendResponse({
+            success: true,
+            data: {
+              title: meta.title || 'YouTube Video',
+              channel: meta.channel || '',
+              currentTime: video.currentTime || 0,
+              duration: video.duration || 0,
+              playbackRate: video.playbackRate || 1,
+              isPaused: video.paused
+            }
+          });
+        } catch (e) {
+          sendResponse({ success: false, error: e.message });
+        }
+        return false;
+      }
+
+      if (message.type === 'SET_PLAYBACK_SPEED') {
+        try {
+          const video = document.querySelector('video.html5-main-video') || document.querySelector('video');
+          if (video && typeof message.speed === 'number') {
+            video.playbackRate = message.speed;
+            sendResponse({ success: true, playbackRate: video.playbackRate });
+          } else {
+            sendResponse({ success: false, error: 'Video not found or invalid speed' });
+          }
+        } catch (e) {
+          sendResponse({ success: false, error: e.message });
+        }
+        return false;
+      }
     });
   }
 
