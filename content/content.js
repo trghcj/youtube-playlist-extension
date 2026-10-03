@@ -184,6 +184,8 @@
     const isFullPlaylistPage = window.location.pathname === '/playlist';
     if (isFullPlaylistPage) {
       await scrollToLoadAllVideos();
+    } else {
+      await scrollToLoadAllWatchPlaylistVideos();
     }
 
     const videos = extractVideoItems();
@@ -201,8 +203,17 @@
     if (statsEl) {
       const match = statsEl.textContent.match(/(\d[\d,]*)/);
       if (match) {
-        totalVideoCount = parseInt(match[1].replace(/,/g, ''));
+        totalVideoCount = parseInt(match[1].replace(/,/g, ''), 10);
       }
+    } else {
+      const watchExpected = getWatchPlaylistExpectedCount();
+      if (watchExpected > 0) {
+        totalVideoCount = watchExpected;
+      }
+    }
+
+    if (videos.length > totalVideoCount) {
+      totalVideoCount = videos.length;
     }
 
     const currentVideoIndex = getCurrentVideoIndex(videos);
@@ -332,19 +343,149 @@
     return parts.join(' ');
   }
 
+  function getWatchPlaylistExpectedCount() {
+    const panel = document.querySelector('ytd-playlist-panel-renderer');
+    if (!panel) return 0;
+
+    const candidates = panel.querySelectorAll(
+      '#header-description, .publisher-container, #publisher-container, ' +
+      '#header-contents, yt-formatted-string, #index, span'
+    );
+
+    for (const el of candidates) {
+      const text = el.textContent || '';
+      // Matches "Apna College - 1 / 250", "1 / 250", "1/250", "1 of 250"
+      const match = text.match(/(?:\/|\bof\b)\s*(\d[\d,]*)/i);
+      if (match) {
+        const count = parseInt(match[1].replace(/,/g, ''), 10);
+        if (!isNaN(count) && count > 0) {
+          return count;
+        }
+      }
+    }
+    return 0;
+  }
+
+  async function scrollToLoadAllWatchPlaylistVideos() {
+    const panel = document.querySelector('ytd-playlist-panel-renderer');
+    if (!panel) return;
+
+    const expectedTotal = getWatchPlaylistExpectedCount();
+
+    const itemsContainer = panel.querySelector('#items') || 
+                           panel.querySelector('.playlist-items') || 
+                           panel.querySelector('#container') || 
+                           panel;
+
+    let previousCount = panel.querySelectorAll('ytd-playlist-panel-video-renderer').length;
+
+    // If already all loaded, no need to scroll
+    if (expectedTotal > 0 && previousCount >= expectedTotal) {
+      return;
+    }
+
+    const maxAttempts = 60;
+    let sameCountStreak = 0;
+
+    for (let i = 0; i < maxAttempts; i++) {
+      // 1. Scroll container to bottom
+      if (itemsContainer && typeof itemsContainer.scrollTop === 'number') {
+        itemsContainer.scrollTop = itemsContainer.scrollHeight;
+      }
+
+      // 2. Also scroll into view the last video item or continuation renderer
+      const lastVideo = panel.querySelector('ytd-playlist-panel-video-renderer:last-of-type');
+      if (lastVideo) {
+        lastVideo.scrollIntoView({ behavior: 'instant', block: 'end' });
+      }
+
+      const continuation = panel.querySelector('ytd-continuation-item-renderer');
+      if (continuation) {
+        continuation.scrollIntoView({ behavior: 'instant', block: 'end' });
+      }
+
+      // Wait for YouTube to fetch and append the next batch of videos
+      await sleep(500);
+
+      const currentCount = panel.querySelectorAll('ytd-playlist-panel-video-renderer').length;
+
+      // Update loading status if bubble panel is open
+      const loadingText = document.getElementById('yt-pa-loading-text');
+      if (loadingText && expectedTotal > 0) {
+        loadingText.textContent = `Loading playlist (${currentCount}/${expectedTotal})...`;
+      }
+
+      if (expectedTotal > 0 && currentCount >= expectedTotal) {
+        break;
+      }
+
+      if (currentCount === previousCount) {
+        sameCountStreak++;
+        if (sameCountStreak >= 3) {
+          const hasContinuation = panel.querySelector('ytd-continuation-item-renderer') !== null;
+          if (!hasContinuation) break;
+          await sleep(600);
+          if (sameCountStreak >= 4) break;
+        }
+      } else {
+        sameCountStreak = 0;
+      }
+
+      previousCount = currentCount;
+    }
+
+    // Scroll active/current video back into view so user's sidebar position is preserved
+    const activeVideo = panel.querySelector('ytd-playlist-panel-video-renderer[selected], ytd-playlist-panel-video-renderer[aria-selected="true"]') ||
+                        panel.querySelector('ytd-playlist-panel-video-renderer');
+    if (activeVideo) {
+      activeVideo.scrollIntoView({ behavior: 'instant', block: 'nearest' });
+    }
+  }
+
   async function scrollToLoadAllVideos() {
     const maxScrollAttempts = 100;
     let lastCount = 0;
     let sameCountStreak = 0;
 
+    let expectedTotal = 0;
+    const statsEl = document.querySelector(
+      '.ytd-playlist-header-renderer .metadata-stats yt-formatted-string, ' +
+      '#stats yt-formatted-string, ' +
+      '.ytd-playlist-sidebar-primary-info-renderer .stats yt-formatted-string'
+    );
+    if (statsEl) {
+      const match = statsEl.textContent.match(/(\d[\d,]*)/);
+      if (match) expectedTotal = parseInt(match[1].replace(/,/g, ''), 10);
+    }
+
     for (let i = 0; i < maxScrollAttempts; i++) {
       window.scrollTo(0, document.documentElement.scrollHeight);
-      await sleep(800);
+
+      const lastVideo = document.querySelector('ytd-playlist-video-renderer:last-of-type');
+      if (lastVideo) lastVideo.scrollIntoView({ behavior: 'instant', block: 'end' });
+
+      const continuation = document.querySelector('ytd-continuation-item-renderer');
+      if (continuation) continuation.scrollIntoView({ behavior: 'instant', block: 'end' });
+
+      await sleep(500);
 
       const currentCount = document.querySelectorAll('ytd-playlist-video-renderer').length;
+
+      const loadingText = document.getElementById('yt-pa-loading-text');
+      if (loadingText && expectedTotal > 0) {
+        loadingText.textContent = `Loading playlist (${currentCount}/${expectedTotal})...`;
+      }
+
+      if (expectedTotal > 0 && currentCount >= expectedTotal) break;
+
       if (currentCount === lastCount) {
         sameCountStreak++;
-        if (sameCountStreak >= 3) break;
+        if (sameCountStreak >= 3) {
+          const hasContinuation = document.querySelector('ytd-continuation-item-renderer') !== null;
+          if (!hasContinuation) break;
+          await sleep(600);
+          if (sameCountStreak >= 4) break;
+        }
       } else {
         sameCountStreak = 0;
       }
