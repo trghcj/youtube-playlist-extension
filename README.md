@@ -1,6 +1,19 @@
 # 🎬 YouTube Playlist & Video Analyzer - Chrome Extension
 
-A minimal, production-ready Chrome extension that lives seamlessly inside YouTube. Analyze full playlists or individual videos with a single click. Calculate exact completion times at playback speeds from 1× to 3×, view real-time countdown clocks, plan daily study schedules, and switch playback speeds on the fly — **with instant live updates as you navigate across YouTube**.
+A minimal, fast, and privacy-friendly utility to analyze YouTube playlists and individual videos with a single click.
+
+Key Features:
+- **Playlist Runtime & Averages**: View total duration, video count, and average length.
+- **Speed Calculations**: Accurate completion times at 1x, 1.25x, 1.5x, 1.75x, 2x, 2.5x, and 3x playback speeds.
+- **Time Saved Breakdown**: Know exactly how much time you save by watching at higher speeds.
+- **Schedule Matrix & Custom Calculator**: Plan your daily watch time (1 to 24 hours/day) and see when you'll finish.
+- **Video Analyzer Mode**: Track live progress, estimated finish clock (e.g., Ends at 10:45 PM), and switch playback speeds on the fly.
+- **Live SPA Updates**: Automatically adapts as you browse playlists and videos without refreshing the page.
+- **Native Dark UI**: Clean, compact panel that matches YouTube's aesthetic and auto-hides in fullscreen.
+
+Private & Lightweight:
+- All analysis runs locally in your browser.
+- No third-party servers, tracking, or external API keys needed.
 
 ![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-red?style=flat-square&logo=googlechrome)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue?style=flat-square)
