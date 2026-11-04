@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "YouTube Playlist Analyzer",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Analyze YouTube playlists - get total duration, completion time at different speeds, and more!",
   "permissions": ["activeTab", "storage"],
   "host_permissions": ["*://*.youtube.com/*"],
