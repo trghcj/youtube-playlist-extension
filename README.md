@@ -1,165 +1,152 @@
-# 🎬 YouTube Playlist & Video Analyzer - Chrome Extension
+# YouTube Playlist Analyzer
 
-A minimal, fast, and privacy-friendly utility to analyze YouTube playlists and individual videos with a single click.
-
-Key Features:
-- **Playlist Runtime & Averages**: View total duration, video count, and average length.
-- **Speed Calculations**: Accurate completion times at 1x, 1.25x, 1.5x, 1.75x, 2x, 2.5x, and 3x playback speeds.
-- **Time Saved Breakdown**: Know exactly how much time you save by watching at higher speeds.
-- **Schedule Matrix & Custom Calculator**: Plan your daily watch time (1 to 24 hours/day) and see when you'll finish.
-- **Video Analyzer Mode**: Track live progress, estimated finish clock (e.g., Ends at 10:45 PM), and switch playback speeds on the fly.
-- **Live SPA Updates**: Automatically adapts as you browse playlists and videos without refreshing the page.
-- **Native Dark UI**: Clean, compact panel that matches YouTube's aesthetic and auto-hides in fullscreen.
-
-Private & Lightweight:
-- All analysis runs locally in your browser.
-- No third-party servers, tracking, or external API keys needed.
+A Chrome extension that calculates how long a YouTube playlist or video will take to watch, at any playback speed, and helps you plan a viewing schedule. It runs entirely in the browser, needs no account or API key, and works on YouTube's pages without reloading them.
 
 ![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-red?style=flat-square&logo=googlechrome)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)
 
----
+## Contents
 
-## ✨ Features
+- [Features](#features)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Settings](#settings)
+- [Project Structure](#project-structure)
+- [Technical Notes](#technical-notes)
+- [Privacy](#privacy)
+- [Contributing](#contributing)
+- [License](#license)
 
-### 🔴 Signature Floating Trigger & Pinned Panel
-- Stays subtly on YouTube with the recognizable **red floating trigger button** in the bottom-right corner.
-- Automatically hides during native full-screen video playback (`F`) to ensure zero distraction.
-- Opens a clean, compact slide-up utility panel (`12px` border radius, `#181818` dark surface) that matches YouTube's native design system.
-- Pinned header with clean `×` close button and persistent navigation.
+## Features
 
----
+### In-page panel
 
-### 🔄 Seamless Live Updates (Zero Page Reloads)
-- **Instant Route Detection**: Hooks directly into native YouTube SPA events (`yt-navigate-finish`, `yt-page-data-updated`, `popstate`).
-- **Live Transition Between Playlists and Videos**: When switching from a playlist (`/playlist`) to a video (`/watch`), or from a video back to a playlist, the extension automatically clears stale states and **live-updates the active panel immediately** without requiring a page refresh.
-- **Dual-Mode Support on Watch Pages**: When watching a video that belongs to a playlist queue, the panel defaults to **Video Analyzer** with an intuitive `View Playlist ❯` / `View Video ❯` switcher in the header to easily analyze either the playing video or the entire playlist.
-- **Video-to-Video Transitions**: Automatically refreshes when autoplaying or clicking recommended videos.
+A floating button in the bottom-right corner of YouTube opens a compact panel styled to match YouTube's dark theme. The button and panel hide automatically during full-screen playback.
 
----
+The panel follows YouTube's single-page navigation. When you move between playlists and videos, it updates on its own, with no page refresh. On a video that belongs to a playlist, a header switch (`View Playlist` / `View Video`) moves between the playlist analysis and the single-video analysis.
 
-### 📑 1. Playlist Analyzer Mode
-*(Active on playlist pages or via the playlist toggle)*
+### Playlist analysis
 
-- **Overview Tab**:
-  - **Total Duration**: Exact combined runtime in hours, minutes, and seconds.
-  - **Video Count**: Total number of videos extracted from the playlist.
-  - **Average Length**: Average video duration across the collection.
-  - **At 2× Speed**: Quick calculation of total watch time at double speed.
-  - **Shortest & Longest**: Direct preview of the extreme video lengths with duration badges.
-- **Speeds Tab**:
-  - Compact speed comparison table across **1×, 1.25×, 1.5×, 1.75×, 2×, 2.5×, and 3×**.
-  - Thin, subtle progress bars with active speed indicator.
-  - **Time Saved**: Clean breakdown of how much total time you save at 1.25×, 1.5×, 2×, and 3× speeds (e.g., `At 2×: 51m 58s`).
-- **Schedule Tab**:
-  - **Daily Watch Time Matrix**: Days to complete based on 30 min, 1 hr, 2 hrs, 3 hrs, or 5 hrs per day at 1×, 1.5×, and 2× speeds.
-  - **Custom Calculator**: Select any daily watch commitment from **1 to 24 hours/day** and playback speed to compute exact completion days.
+**Overview**
 
----
+- Remaining watch time from the current video, updated every second while a video plays. Time already watched of the current video is subtracted.
+- Follows autoplay and queue navigation automatically. A `Now at Video N` badge shows the current position.
+- Estimated finish time at your current playback speed.
+- Choose any video as the starting point with the `From` selector.
+- Totals for the whole playlist: duration, video count, average length, and duration at 2x.
+- Shortest and longest videos.
+- Deleted, private, live and upcoming videos are listed but left out of averages and extremes. The panel also says when a playlist could not be fully loaded.
 
-### 🎥 2. Video Analyzer Mode
-*(Active on individual video watch pages)*
+**Speeds**
 
-- **Live Video Meta**: Displays the currently playing video title and channel name.
-- **Real-Time Progress**: Smooth animated progress bar with current and total playback timestamps.
-- **Estimated Finish Clock**: Dynamic finish badge showing the exact clock time the video will finish (e.g., `Ends at 10:45 PM`) and remaining time based on your current playback speed.
-- **Speed & Finish Breakdown**: Tabular rows showing remaining duration and completion clock at every speed (1× to 3×).
-- **Instant Speed Switcher**: One-click `Set Speed` buttons to instantly change YouTube's video playback rate without opening YouTube's playback menu.
-- **Time Saved**: Live calculation of minutes and seconds saved compared to normal speed.
+- Total duration at 1x, 1.25x, 1.5x, 1.75x, 2x, 2.5x and 3x, with a comparison bar for each.
+- Time saved at 1.25x, 1.5x, 2x and 3x.
 
----
+**Schedule**
 
-### 📋 3. Full Toolbar Popup
-- Click the extension icon in the Chrome toolbar at any time.
-- Dedicated **Videos Tab** with instant search filter and sorting (playlist order, shortest first, longest first).
-- **History Panel**: Automatically records your recently analyzed playlists.
-- **Settings Panel**: Customize default speed, auto-analysis, and floating trigger preferences.
+- Days to finish at 30 minutes, 1, 2, 3 and 5 hours per day, at 1x, 1.5x and 2x.
+- Custom calculator for any daily commitment (up to 24 hours) and playback speed, for either the remaining videos or the whole playlist.
 
----
+**Videos**
 
-## 🚀 Installation
+- Search by title, combined with sorting by playlist order, shortest, longest, title A–Z or title Z–A. Title sorting is natural, so "Part 9" comes before "Part 10".
+- Click a video, or its number, to play it in the current tab using YouTube's own navigation. Ctrl+click (Cmd+click on macOS) opens it in a new tab.
+- The playing video and the videos already watched are marked.
 
-### Load Unpacked in Chrome (Developer Mode)
+### Single-video analysis
 
-1. **Clone this repository**:
+- Title, channel, playback progress and remaining time.
+- Estimated finish time at the current playback speed.
+- Remaining time and finish time at every speed from 1x to 3x.
+- One-click buttons to change YouTube's playback speed.
+- Time saved compared with normal speed.
+
+### Toolbar popup
+
+The popup offers the same playlist and video analysis from the browser toolbar. It adds a history of recently analyzed playlists and a settings panel.
+
+## Installation
+
+### Chrome Web Store
+
+Install the published version from the Chrome Web Store listing.
+
+### From source (developer mode)
+
+1. Clone the repository:
+
    ```bash
    git clone https://github.com/trghcj/youtube-playlist-extension.git
    ```
-   *(Or download the ZIP and extract it)*
 
-2. Open Google Chrome and navigate to:
-   ```text
-   chrome://extensions/
-   ```
+2. Open `chrome://extensions/` in Google Chrome.
+3. Turn on **Developer mode** (top-right corner).
+4. Click **Load unpacked** and select the cloned folder.
+5. Refresh any YouTube tabs that were already open.
 
-3. Turn on the **Developer mode** toggle in the top-right corner.
+## Usage
 
-4. Click the **"Load unpacked"** button in the top-left corner.
+1. Open a YouTube playlist (`https://www.youtube.com/playlist?list=...`) or a video (`https://www.youtube.com/watch?v=...`).
+2. Click the red floating button in the bottom-right corner, or the extension icon in the toolbar.
+3. The panel shows the playlist analysis on playlist pages and the video analysis on video pages. On a video inside a playlist, use the header switch to change between them.
+4. Keep browsing. The panel updates as you navigate.
 
-5. Select the cloned `youtube-playlist-extension` directory.
+## Settings
 
-6. The extension is installed and ready to use! 🎉
+Open the settings from the gear icon in the toolbar popup. Changes apply immediately, including to YouTube tabs that are already open.
 
----
+| Setting | Effect |
+| --- | --- |
+| Default speed | Highlighted in the Speeds tab, shown in the Remaining card, and used as the custom calculator's default |
+| Auto-analyze on popup open | When off, the popup waits until you click **Analyze this page** |
+| Show floating button | Shows or hides the floating button on YouTube |
+| Save analysis history | Turns recording of analyzed playlists on or off |
 
-## 📖 How to Use
-
-1. Open any YouTube playlist (e.g. `https://www.youtube.com/playlist?list=...`) or any video (`https://www.youtube.com/watch?v=...`).
-2. Click the **red floating bubble** in the bottom-right corner of the page.
-3. The panel opens and instantly displays:
-   - **Playlist Analyzer** if you are on a playlist page.
-   - **Video Analyzer** if you are on a video page.
-   - On a video page with a playlist queue, use `View Playlist ❯` / `View Video ❯` in the header to switch between video and playlist analysis.
-4. Navigate freely across YouTube — the panel updates live on route changes with zero page reloads needed!
-
----
-
-## 🏗️ Project Structure
+## Project Structure
 
 ```text
 youtube-playlist-extension/
-├── manifest.json              # Chrome Manifest V3 configuration
+├── manifest.json            Manifest V3 configuration
+├── lib/
+│   └── core.js              Shared logic: parsing, formatting, analysis, sorting, settings
 ├── background/
-│   └── background.js          # Service worker (analytics, storage, history)
+│   └── background.js        Service worker: analysis history storage
 ├── content/
-│   ├── content.js             # YouTube DOM extraction, live SPA sync & inline panel
-│   └── content.css            # Dark theme styles & pinned panel layout
+│   ├── content.js           Page data extraction, navigation tracking, in-page panel
+│   └── content.css          In-page panel and floating button styles
 ├── popup/
-│   ├── popup.html             # Toolbar popup interface
-│   ├── popup.css              # Popup styling & theme
-│   └── popup.js               # Popup logic, search, sort & settings
-├── icons/
-│   ├── icon16.png             # 16x16 toolbar icon
-│   ├── icon48.png             # 48x48 extensions manager icon
-│   └── icon128.png            # 128x128 store/display icon
-└── README.md                  # Project documentation
+│   ├── popup.html           Toolbar popup markup
+│   ├── popup.css            Toolbar popup styles
+│   └── popup.js             Toolbar popup logic
+├── icons/                   Extension icons (16, 48, 128 px) and icon generator scripts
+├── PRIVACY.md               Privacy policy
+├── SECURITY.md              Security policy
+└── LICENSE                  MIT license
 ```
 
----
+## Technical Notes
 
-## 🛠️ Technical Highlights
+- **Manifest V3.** Permissions are limited to `storage`, `activeTab` and `https://www.youtube.com/*`.
+- **No external requests.** All data is read from the YouTube page you have open. No API keys, servers or third-party scripts are involved.
+- **Single-page navigation.** The panel listens to YouTube's `yt-navigate-finish` and `yt-page-data-updated` events, with a light URL check as a fallback.
+- **Performance.** There are no long-running observers on the whole page. Analysis of large playlists can be cancelled: it stops when you close the panel or leave the page, and it puts your scroll position back when it finishes.
+- **Shared logic.** The popup and the in-page panel use the same calculation code in `lib/core.js`, so they always agree.
 
-- **Manifest V3** compliant.
-- **Zero Heavy Observers**: Avoids recursive DOM subtree observers and `body:has()` selectors for lag-free video playback and zoom performance.
-- **Native SPA Integration**: Automatically responds to YouTube's internal `yt-navigate-finish` and `yt-page-data-updated` lifecycle events.
-- **No External API Keys Required**: Safely parses playlist and video data directly inside your browser.
-- **Local Storage**: Uses Chrome's Storage API for saved history and preferences.
+## Privacy
 
----
+The extension collects no personal data and sends nothing over the network. Preferences and history are stored locally with `chrome.storage.local`. See [PRIVACY.md](PRIVACY.md) for the full policy.
 
-## 🤝 Contributing
+## Contributing
 
-Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](https://github.com/trghcj/youtube-playlist-extension/issues).
+Issues and pull requests are welcome on the [issues page](https://github.com/trghcj/youtube-playlist-extension/issues).
 
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+1. Fork the repository.
+2. Create a feature branch: `git checkout -b feature/your-feature`.
+3. Commit your changes: `git commit -m "feat: describe your change"`.
+4. Push the branch: `git push origin feature/your-feature`.
+5. Open a pull request.
 
----
+## License
 
-## 📝 License
-
-Distributed under the MIT License. See `LICENSE` for more information.
+Distributed under the MIT License. See [LICENSE](LICENSE) for details.

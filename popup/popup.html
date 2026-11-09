@@ -56,6 +56,16 @@
       <p class="yt-pa-state-sub">Open any YouTube playlist or video to analyze.</p>
     </div>
 
+    <!-- Idle State (auto-analyze turned off) -->
+    <div id="idleState" class="yt-pa-no-playlist hidden">
+      <svg viewBox="0 0 24 24" width="36" height="36" fill="#717171">
+        <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/>
+      </svg>
+      <p class="yt-pa-state-title">Ready to analyze</p>
+      <p class="yt-pa-state-sub">Auto-analyze is off. Click below to analyze this page.</p>
+      <button id="idleAnalyzeBtn" class="yt-pa-btn-retry">Analyze this page</button>
+    </div>
+
     <!-- Error State -->
     <div id="errorState" class="yt-pa-no-playlist hidden">
       <svg viewBox="0 0 24 24" width="36" height="36" fill="#f44336">
@@ -91,13 +101,17 @@
               <span class="yt-pa-rem-v" id="remainingCount">--</span>
             </div>
             <div class="yt-pa-rem-item highlight">
-              <span class="yt-pa-rem-k">At 1.5×</span>
+              <span class="yt-pa-rem-k" id="remainingCardLabel">At 1.5×</span>
               <span class="yt-pa-rem-v" id="remainingAt1_5x">--</span>
             </div>
             <div class="yt-pa-rem-item">
               <span class="yt-pa-rem-k">At 2×</span>
               <span class="yt-pa-rem-v" id="remainingAt2x">--</span>
             </div>
+          </div>
+          <div class="yt-pa-rem-live-row" id="remainingLiveRow" style="display:none;">
+            <span>Finish at current speed</span>
+            <span id="remainingLiveFinish">--</span>
           </div>
         </div>
 
@@ -212,7 +226,10 @@
             <button class="yt-pa-sort-btn active" data-sort="index">Order</button>
             <button class="yt-pa-sort-btn" data-sort="duration-asc">Shortest</button>
             <button class="yt-pa-sort-btn" data-sort="duration-desc">Longest</button>
+            <button class="yt-pa-sort-btn" data-sort="title-asc" title="Sort by title A to Z">A–Z</button>
+            <button class="yt-pa-sort-btn" data-sort="title-desc" title="Sort by title Z to A">Z–A</button>
           </div>
+          <div class="yt-pa-videos-hint">Click a video to play it · Ctrl+click for a new tab</div>
         </div>
         <div id="videosList" class="yt-pa-videos-list"></div>
       </div>
@@ -297,13 +314,14 @@
           </label>
         </div>
         <div class="yt-pa-about">
-          <p>YouTube Playlist Analyzer v1.0.1</p>
+          <p>YouTube Playlist Analyzer v1.1.0</p>
           <p class="yt-pa-muted">Made with ❤️ for productivity</p>
         </div>
       </div>
     </div>
   </div>
 
+  <script src="../lib/core.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

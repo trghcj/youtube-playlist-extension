@@ -20,7 +20,7 @@ All calculations, duration analyses, and playback speed estimations are executed
 ## 3. Permissions Justification
 - `activeTab`: Used solely to interact with the active YouTube tab when you click the extension action button.
 - `storage`: Used solely to save user preferences locally on your computer.
-- `host_permissions (*://*.youtube.com/*)`: Required to read video runtime metadata and inject the in-page analyzer panel directly onto YouTube pages.
+- `host_permissions (https://www.youtube.com/*)`: Required to read video runtime metadata and inject the in-page analyzer panel directly onto YouTube pages.
 
 ## 4. Remote Code
 This extension does not load or execute any remote code, external scripts, or CDNs. All source code is bundled inside the extension package.

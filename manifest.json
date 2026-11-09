@@ -1,10 +1,15 @@
 {
   "manifest_version": 3,
   "name": "YouTube Playlist Analyzer",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Analyze YouTube playlists - get total duration, completion time at different speeds, and more!",
-  "permissions": ["activeTab", "storage"],
-  "host_permissions": ["*://*.youtube.com/*"],
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://www.youtube.com/*"
+  ],
   "action": {
     "default_popup": "popup/popup.html",
     "default_icon": {
@@ -15,9 +20,16 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://*.youtube.com/*"],
-      "js": ["content/content.js"],
-      "css": ["content/content.css"]
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "lib/core.js",
+        "content/content.js"
+      ],
+      "css": [
+        "content/content.css"
+      ]
     }
   ],
   "background": {

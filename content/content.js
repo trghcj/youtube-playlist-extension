@@ -1,8 +1,22 @@
 // Content script - runs on YouTube pages
-// Extracts playlist data from the YouTube DOM
+// Extracts playlist data from the YouTube DOM and renders the in-page panel.
+// Depends on lib/core.js (loaded first via manifest.json) for the YTPA helpers.
 
 (function() {
   'use strict';
+
+  if (!globalThis.YTPA) return;
+  const {
+    SPEEDS, TIME_SAVED_SPEEDS, DEFAULT_SETTINGS,
+    parseDuration, formatTime, formatDuration, escapeHtml,
+    daysToFinish, formatDays, videoIdFromUrl, analyzePlaylist,
+    clampIndex, computeRemaining, getVisibleVideos, cardSpeed
+  } = globalThis.YTPA;
+
+  const VIDEO_SELECTOR = 'video.html5-main-video';
+  const PLAYLIST_ITEM_SELECTOR = 'ytd-playlist-video-renderer';
+  const PANEL_ITEM_SELECTOR = 'ytd-playlist-panel-video-renderer';
+  const ITEM_LINK_SELECTOR = 'a#wc-endpoint, a#video-title, a#thumbnail, a[href*="/watch?"]';
 
   // Check if extension context is still valid (prevents errors after extension reload)
   function isContextValid() {
@@ -22,32 +36,69 @@
     }
   }, true);
 
-  // Listen for messages from popup/background
+  function getMainVideo() {
+    return document.querySelector(VIDEO_SELECTOR) || document.querySelector('video');
+  }
+
+  function isAdPlaying() {
+    return !!document.querySelector('#movie_player.ad-showing, .html5-video-player.ad-showing');
+  }
+
+  // ===== SETTINGS =====
+
+  let settings = { ...DEFAULT_SETTINGS };
+
+  function loadSettings() {
+    if (!isContextValid()) return;
+    globalThis.YTPA.loadSettings().then(s => {
+      settings = s;
+      applySettings();
+    });
+  }
+
+  function applySettings() {
+    const btn = document.getElementById('yt-playlist-analyzer-btn');
+    if (btn) btn.classList.toggle('yt-pa-off', !settings.showFloatingBtn);
+    if (!settings.showFloatingBtn && panelOpen) togglePanel();
+
+    const spdSelect = document.getElementById('yt-pa-custom-spd');
+    if (spdSelect && !spdSelect.dataset.userChanged) {
+      spdSelect.value = String(parseFloat(settings.defaultSpeed) || 1.5);
+      if (!spdSelect.value) spdSelect.value = '1.5';
+    }
+    if (analysisData) renderInlineResults();
+  }
+
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || !changes.settings || !isContextValid()) return;
+      settings = { ...DEFAULT_SETTINGS, ...(changes.settings.newValue || {}) };
+      applySettings();
+    });
+  } catch (e) { /* context gone */ }
+
+  // ===== MESSAGES FROM POPUP =====
+
   if (isContextValid()) {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (!isContextValid()) return;
 
       if (message.type === 'EXTRACT_PLAYLIST_DATA') {
-        extractPlaylistData()
+        extractPlaylistData(() => !isContextValid())
           .then(data => sendResponse({ success: true, data }))
           .catch(error => sendResponse({ success: false, error: error.message }));
         return true;
       }
 
-      if (message.type === 'CHECK_PLAYLIST_PAGE') {
-        const isPlaylist = isPlaylistPage();
-        sendResponse({ isPlaylist, url: window.location.href });
-        return false;
-      }
-
       if (message.type === 'GET_VIDEO_DATA') {
         try {
-          const video = document.querySelector('video.html5-main-video') || document.querySelector('video');
+          const video = getMainVideo();
           if (!video) {
             sendResponse({ success: false, error: 'No video element found on page' });
             return false;
           }
           const meta = getVideoMeta();
+          const params = new URLSearchParams(window.location.search);
           sendResponse({
             success: true,
             data: {
@@ -56,7 +107,10 @@
               currentTime: video.currentTime || 0,
               duration: video.duration || 0,
               playbackRate: video.playbackRate || 1,
-              isPaused: video.paused
+              isPaused: video.paused,
+              isAd: isAdPlaying(),
+              videoId: params.get('v'),
+              playlistId: params.get('list')
             }
           });
         } catch (e) {
@@ -65,9 +119,21 @@
         return false;
       }
 
+      if (message.type === 'OPEN_VIDEO') {
+        let ok = false;
+        try {
+          const target = new URL(message.url, window.location.origin);
+          if (target.hostname === 'www.youtube.com') {
+            ok = navigateToVideoUrl(target.href, message.index);
+          }
+        } catch (e) { ok = false; }
+        sendResponse({ success: ok });
+        return false;
+      }
+
       if (message.type === 'SET_PLAYBACK_SPEED') {
         try {
-          const video = document.querySelector('video.html5-main-video') || document.querySelector('video');
+          const video = getMainVideo();
           if (video && typeof message.speed === 'number') {
             video.playbackRate = message.speed;
             sendResponse({ success: true, playbackRate: video.playbackRate });
@@ -82,6 +148,8 @@
     });
   }
 
+  // ===== PAGE DETECTION =====
+
   let activeWatchMode = null; // 'video' | 'playlist' | null
 
   function isDedicatedPlaylistPage() {
@@ -93,9 +161,12 @@
     return path === '/watch' || path.startsWith('/shorts/');
   }
 
+  function getPlaylistId() {
+    return new URLSearchParams(window.location.search).get('list');
+  }
+
   function hasPlaylistParam() {
-    const params = new URLSearchParams(window.location.search);
-    return !!params.get('list');
+    return !!getPlaylistId();
   }
 
   function isPlaylistPage() {
@@ -104,11 +175,6 @@
       return activeWatchMode === 'playlist' && hasPlaylistParam();
     }
     return hasPlaylistParam();
-  }
-
-  function getPlaylistId() {
-    const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get('list');
   }
 
   function isVideoPage() {
@@ -136,29 +202,26 @@
     return { title, channel };
   }
 
-  function parseDurationString(durationStr) {
-    if (!durationStr) return 0;
-    durationStr = durationStr.trim();
+  // ===== EXTRACTION =====
 
-    const parts = durationStr.split(':').map(Number);
-
-    if (parts.length === 3) {
-      return parts[0] * 3600 + parts[1] * 60 + parts[2];
-    } else if (parts.length === 2) {
-      return parts[0] * 60 + parts[1];
-    } else if (parts.length === 1) {
-      return parts[0];
-    }
-    return 0;
+  function getPlaylistPageExpectedCount() {
+    const statsEl = document.querySelector(
+      '.ytd-playlist-header-renderer .metadata-stats yt-formatted-string, ' +
+      '#stats yt-formatted-string, ' +
+      '.ytd-playlist-sidebar-primary-info-renderer .stats yt-formatted-string'
+    );
+    if (!statsEl) return 0;
+    const match = statsEl.textContent.match(/(\d[\d,]*)/);
+    return match ? parseInt(match[1].replace(/,/g, ''), 10) : 0;
   }
 
-  async function extractPlaylistData() {
+  async function extractPlaylistData(isCancelled = () => false) {
     const playlistId = getPlaylistId();
     if (!playlistId) {
       throw new Error('No playlist found on this page. Navigate to a YouTube playlist first.');
     }
 
-    await waitForElement('ytd-playlist-video-renderer, ytd-playlist-panel-video-renderer');
+    await waitForElement(`${PLAYLIST_ITEM_SELECTOR}, ${PANEL_ITEM_SELECTOR}`);
 
     let playlistTitle = 'Unknown Playlist';
     const titleEl = document.querySelector(
@@ -181,11 +244,10 @@
       channelName = channelEl.textContent.trim();
     }
 
-    const isFullPlaylistPage = window.location.pathname === '/playlist';
-    if (isFullPlaylistPage) {
-      await scrollToLoadAllVideos();
+    if (isDedicatedPlaylistPage()) {
+      await scrollToLoadAllVideos(isCancelled);
     } else {
-      await scrollToLoadAllWatchPlaylistVideos();
+      await scrollToLoadAllWatchPlaylistVideos(isCancelled);
     }
 
     const videos = extractVideoItems();
@@ -194,81 +256,63 @@
       throw new Error('Could not extract video data. Make sure you are on a playlist page with visible videos.');
     }
 
-    let totalVideoCount = videos.length;
-    const statsEl = document.querySelector(
-      '.ytd-playlist-header-renderer .metadata-stats yt-formatted-string, ' +
-      '#stats yt-formatted-string, ' +
-      '.ytd-playlist-sidebar-primary-info-renderer .stats yt-formatted-string'
-    );
-    if (statsEl) {
-      const match = statsEl.textContent.match(/(\d[\d,]*)/);
-      if (match) {
-        totalVideoCount = parseInt(match[1].replace(/,/g, ''), 10);
-      }
-    } else {
-      const watchExpected = getWatchPlaylistExpectedCount();
-      if (watchExpected > 0) {
-        totalVideoCount = watchExpected;
-      }
-    }
-
-    if (videos.length > totalVideoCount) {
+    let totalVideoCount = isDedicatedPlaylistPage()
+      ? getPlaylistPageExpectedCount()
+      : getWatchPlaylistExpectedCount();
+    if (!totalVideoCount || videos.length > totalVideoCount) {
       totalVideoCount = videos.length;
     }
-
-    const currentVideoIndex = getCurrentVideoIndex(videos);
 
     return {
       playlistId,
       playlistTitle,
       channelName,
-      playlistUrl: `https://www.youtube.com/playlist?list=${playlistId}`,
+      playlistUrl: `https://www.youtube.com/playlist?list=${encodeURIComponent(playlistId)}`,
       totalVideoCount,
       loadedVideoCount: videos.length,
-      currentVideoIndex,
+      currentVideoIndex: getCurrentVideoIndex(videos),
       videos
     };
   }
 
-  function getCurrentVideoIndex(videos) {
-    const urlParams = new URLSearchParams(window.location.search);
+  // 1-based index of the video currently open in this tab, within `videos`.
+  // Returns 0 when the current page is not a video from this list.
+  function getPlayingIndex(videos) {
+    if (!isVideoWatchPage() || !videos || videos.length === 0) return 0;
+    const params = new URLSearchParams(window.location.search);
 
-    // 1. Try URL &index= parameter
-    const urlIndex = parseInt(urlParams.get('index'), 10);
-    if (!isNaN(urlIndex) && urlIndex >= 1 && (!videos || urlIndex <= videos.length)) {
+    // 1. Match by video ID (most reliable)
+    const currentVideoId = params.get('v');
+    if (currentVideoId) {
+      const matchIndex = videos.findIndex(v => videoIdFromUrl(v.url) === currentVideoId);
+      if (matchIndex !== -1) return matchIndex + 1;
+    }
+
+    // 2. URL &index= parameter
+    const urlIndex = parseInt(params.get('index'), 10);
+    if (!isNaN(urlIndex) && urlIndex >= 1 && urlIndex <= videos.length) {
       return urlIndex;
     }
 
-    // 2. Try URL &v= video ID parameter
-    const currentVideoId = urlParams.get('v');
-    if (currentVideoId && videos && videos.length > 0) {
-      const matchIndex = videos.findIndex(v => v.url && v.url.includes(currentVideoId));
-      if (matchIndex !== -1) {
-        return matchIndex + 1;
-      }
-    }
+    // 3. DOM selected queue item
+    const selIdx = videos.findIndex(v => v.isSelected);
+    return selIdx !== -1 ? selIdx + 1 : 0;
+  }
 
-    // 3. Try DOM selected queue item
-    if (videos && videos.length > 0) {
-      const selIdx = videos.findIndex(v => v.isSelected);
-      if (selIdx !== -1) {
-        return selIdx + 1;
-      }
-    }
+  function getCurrentVideoIndex(videos) {
+    return getPlayingIndex(videos) || 1;
+  }
 
-    return 1;
+  function getItemElements() {
+    let els = document.querySelectorAll(PLAYLIST_ITEM_SELECTOR);
+    if (els.length === 0) els = document.querySelectorAll(PANEL_ITEM_SELECTOR);
+    return els;
   }
 
   function extractVideoItems() {
     const videos = [];
 
-    let videoElements = document.querySelectorAll('ytd-playlist-video-renderer');
-
-    if (videoElements.length === 0) {
-      videoElements = document.querySelectorAll('ytd-playlist-panel-video-renderer');
-    }
-
-    videoElements.forEach((el, index) => {
+    getItemElements().forEach((el, index) => {
       const titleEl = el.querySelector('#video-title');
       const title = titleEl ? titleEl.textContent.trim() : `Video ${index + 1}`;
 
@@ -276,24 +320,22 @@
       const durationEl = el.querySelector(
         'ytd-thumbnail-overlay-time-status-renderer #text, ' +
         'span.ytd-thumbnail-overlay-time-status-renderer, ' +
-        '.badge-shape-wiz__text'
+        '.badge-shape-wiz__text, ' +
+        '.yt-badge-shape__text'
       );
       if (durationEl) {
-        const durationText = durationEl.textContent.trim();
-        if (!durationText.match(/live|premiere|shorts/i)) {
-          durationSeconds = parseDurationString(durationText);
-        }
+        durationSeconds = parseDuration(durationEl.textContent);
       }
 
       let videoChannel = '';
-      const vidChannelEl = el.querySelector('#channel-name yt-formatted-string a, .ytd-channel-name a');
+      const vidChannelEl = el.querySelector('#channel-name yt-formatted-string a, .ytd-channel-name a, #byline');
       if (vidChannelEl) {
         videoChannel = vidChannelEl.textContent.trim();
       }
 
       let videoUrl = '';
-      const linkEl = el.querySelector('a#video-title, a.ytd-playlist-video-renderer');
-      if (linkEl) {
+      const linkEl = el.querySelector(ITEM_LINK_SELECTOR);
+      if (linkEl && linkEl.href) {
         videoUrl = linkEl.href;
       }
 
@@ -308,7 +350,7 @@
         index: index + 1,
         title,
         durationSeconds,
-        durationFormatted: formatTime(durationSeconds),
+        durationFormatted: durationSeconds > 0 ? formatTime(durationSeconds) : '',
         channel: videoChannel,
         url: videoUrl,
         isUnavailable,
@@ -319,30 +361,8 @@
     return videos;
   }
 
-  function formatTime(totalSeconds) {
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-
-    if (hours > 0) {
-      return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-    }
-    return `${minutes}:${String(seconds).padStart(2, '0')}`;
-  }
-
-  function formatDuration(totalSeconds) {
-    if (typeof totalSeconds !== 'number' || isNaN(totalSeconds) || totalSeconds < 0) totalSeconds = 0;
-    totalSeconds = Math.round(totalSeconds * 100) / 100;
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = Math.round((totalSeconds % 60) * 100) / 100;
-    const parts = [];
-    if (hours > 0) parts.push(`${hours}h`);
-    if (minutes > 0) parts.push(`${minutes}m`);
-    if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
-    return parts.join(' ');
-  }
-
+  // Reads the "Channel - 8 / 75" counter from the watch-page playlist header.
+  // Video titles inside the list are skipped so "Part 1 of 5" can't be mistaken for the total.
   function getWatchPlaylistExpectedCount() {
     const panel = document.querySelector('ytd-playlist-panel-renderer');
     if (!panel) return 0;
@@ -353,8 +373,8 @@
     );
 
     for (const el of candidates) {
+      if (el.closest(`#items, ${PANEL_ITEM_SELECTOR}`)) continue;
       const text = el.textContent || '';
-      // Matches "Apna College - 1 / 250", "1 / 250", "1/250", "1 of 250"
       const match = text.match(/(?:\/|\bof\b)\s*(\d[\d,]*)/i);
       if (match) {
         const count = parseInt(match[1].replace(/,/g, ''), 10);
@@ -366,133 +386,119 @@
     return 0;
   }
 
-  async function scrollToLoadAllWatchPlaylistVideos() {
+  function setLoadingText(text) {
+    const loadingText = document.getElementById('yt-pa-loading-text');
+    if (loadingText) loadingText.textContent = text;
+  }
+
+  async function scrollToLoadAllWatchPlaylistVideos(isCancelled) {
     const panel = document.querySelector('ytd-playlist-panel-renderer');
     if (!panel) return;
 
     const expectedTotal = getWatchPlaylistExpectedCount();
+    const countItems = () => panel.querySelectorAll(PANEL_ITEM_SELECTOR).length;
 
-    const itemsContainer = panel.querySelector('#items') || 
-                           panel.querySelector('.playlist-items') || 
-                           panel.querySelector('#container') || 
+    let previousCount = countItems();
+    if (expectedTotal > 0 && previousCount >= expectedTotal) return;
+
+    const itemsContainer = panel.querySelector('#items') ||
+                           panel.querySelector('.playlist-items') ||
+                           panel.querySelector('#container') ||
                            panel;
 
-    let previousCount = panel.querySelectorAll('ytd-playlist-panel-video-renderer').length;
-
-    // If already all loaded, no need to scroll
-    if (expectedTotal > 0 && previousCount >= expectedTotal) {
-      return;
-    }
+    // Remember where the user was so we can put everything back afterwards
+    const savedWindowY = window.scrollY;
+    const savedItemsScroll = itemsContainer.scrollTop;
 
     const maxAttempts = 60;
     let sameCountStreak = 0;
 
-    for (let i = 0; i < maxAttempts; i++) {
-      // 1. Scroll container to bottom
-      if (itemsContainer && typeof itemsContainer.scrollTop === 'number') {
-        itemsContainer.scrollTop = itemsContainer.scrollHeight;
-      }
+    try {
+      for (let i = 0; i < maxAttempts; i++) {
+        if (isCancelled()) return;
 
-      // 2. Also scroll into view the last video item or continuation renderer
-      const lastVideo = panel.querySelector('ytd-playlist-panel-video-renderer:last-of-type');
-      if (lastVideo) {
-        lastVideo.scrollIntoView({ behavior: 'instant', block: 'end' });
-      }
-
-      const continuation = panel.querySelector('ytd-continuation-item-renderer');
-      if (continuation) {
-        continuation.scrollIntoView({ behavior: 'instant', block: 'end' });
-      }
-
-      // Wait for YouTube to fetch and append the next batch of videos
-      await sleep(500);
-
-      const currentCount = panel.querySelectorAll('ytd-playlist-panel-video-renderer').length;
-
-      // Update loading status if bubble panel is open
-      const loadingText = document.getElementById('yt-pa-loading-text');
-      if (loadingText && expectedTotal > 0) {
-        loadingText.textContent = `Loading playlist (${currentCount}/${expectedTotal})...`;
-      }
-
-      if (expectedTotal > 0 && currentCount >= expectedTotal) {
-        break;
-      }
-
-      if (currentCount === previousCount) {
-        sameCountStreak++;
-        if (sameCountStreak >= 3) {
-          const hasContinuation = panel.querySelector('ytd-continuation-item-renderer') !== null;
-          if (!hasContinuation) break;
-          await sleep(600);
-          if (sameCountStreak >= 4) break;
+        if (typeof itemsContainer.scrollTop === 'number') {
+          itemsContainer.scrollTop = itemsContainer.scrollHeight;
         }
-      } else {
-        sameCountStreak = 0;
+
+        const continuation = panel.querySelector('ytd-continuation-item-renderer');
+        const lastVideo = panel.querySelector(`${PANEL_ITEM_SELECTOR}:last-of-type`);
+        const target = continuation || lastVideo;
+        if (target) target.scrollIntoView({ behavior: 'instant', block: 'end' });
+
+        await sleep(500);
+        if (isCancelled()) return;
+
+        const currentCount = countItems();
+        if (expectedTotal > 0) {
+          setLoadingText(`Loading playlist (${currentCount}/${expectedTotal})...`);
+          if (currentCount >= expectedTotal) break;
+        }
+
+        if (currentCount === previousCount) {
+          sameCountStreak++;
+          if (sameCountStreak >= 3) {
+            if (!panel.querySelector('ytd-continuation-item-renderer')) break;
+            await sleep(600);
+            if (sameCountStreak >= 4) break;
+          }
+        } else {
+          sameCountStreak = 0;
+        }
+
+        previousCount = currentCount;
       }
-
-      previousCount = currentCount;
-    }
-
-    // Scroll active/current video back into view so user's sidebar position is preserved
-    const activeVideo = panel.querySelector('ytd-playlist-panel-video-renderer[selected], ytd-playlist-panel-video-renderer[aria-selected="true"]') ||
-                        panel.querySelector('ytd-playlist-panel-video-renderer');
-    if (activeVideo) {
-      activeVideo.scrollIntoView({ behavior: 'instant', block: 'nearest' });
+    } finally {
+      itemsContainer.scrollTop = savedItemsScroll;
+      window.scrollTo(window.scrollX, savedWindowY);
     }
   }
 
-  async function scrollToLoadAllVideos() {
+  async function scrollToLoadAllVideos(isCancelled) {
+    const expectedTotal = getPlaylistPageExpectedCount();
+    const countItems = () => document.querySelectorAll(PLAYLIST_ITEM_SELECTOR).length;
+
+    let lastCount = countItems();
+    if (expectedTotal > 0 && lastCount >= expectedTotal) return;
+
+    const savedWindowY = window.scrollY;
     const maxScrollAttempts = 100;
-    let lastCount = 0;
     let sameCountStreak = 0;
 
-    let expectedTotal = 0;
-    const statsEl = document.querySelector(
-      '.ytd-playlist-header-renderer .metadata-stats yt-formatted-string, ' +
-      '#stats yt-formatted-string, ' +
-      '.ytd-playlist-sidebar-primary-info-renderer .stats yt-formatted-string'
-    );
-    if (statsEl) {
-      const match = statsEl.textContent.match(/(\d[\d,]*)/);
-      if (match) expectedTotal = parseInt(match[1].replace(/,/g, ''), 10);
-    }
+    try {
+      for (let i = 0; i < maxScrollAttempts; i++) {
+        if (isCancelled()) return;
 
-    for (let i = 0; i < maxScrollAttempts; i++) {
-      window.scrollTo(0, document.documentElement.scrollHeight);
+        window.scrollTo(0, document.documentElement.scrollHeight);
+        const continuation = document.querySelector('ytd-continuation-item-renderer');
+        const lastVideo = document.querySelector(`${PLAYLIST_ITEM_SELECTOR}:last-of-type`);
+        const target = continuation || lastVideo;
+        if (target) target.scrollIntoView({ behavior: 'instant', block: 'end' });
 
-      const lastVideo = document.querySelector('ytd-playlist-video-renderer:last-of-type');
-      if (lastVideo) lastVideo.scrollIntoView({ behavior: 'instant', block: 'end' });
+        await sleep(500);
+        if (isCancelled()) return;
 
-      const continuation = document.querySelector('ytd-continuation-item-renderer');
-      if (continuation) continuation.scrollIntoView({ behavior: 'instant', block: 'end' });
-
-      await sleep(500);
-
-      const currentCount = document.querySelectorAll('ytd-playlist-video-renderer').length;
-
-      const loadingText = document.getElementById('yt-pa-loading-text');
-      if (loadingText && expectedTotal > 0) {
-        loadingText.textContent = `Loading playlist (${currentCount}/${expectedTotal})...`;
-      }
-
-      if (expectedTotal > 0 && currentCount >= expectedTotal) break;
-
-      if (currentCount === lastCount) {
-        sameCountStreak++;
-        if (sameCountStreak >= 3) {
-          const hasContinuation = document.querySelector('ytd-continuation-item-renderer') !== null;
-          if (!hasContinuation) break;
-          await sleep(600);
-          if (sameCountStreak >= 4) break;
+        const currentCount = countItems();
+        if (expectedTotal > 0) {
+          setLoadingText(`Loading playlist (${currentCount}/${expectedTotal})...`);
+          if (currentCount >= expectedTotal) break;
         }
-      } else {
-        sameCountStreak = 0;
-      }
-      lastCount = currentCount;
-    }
 
-    window.scrollTo(0, 0);
+        if (currentCount === lastCount) {
+          sameCountStreak++;
+          if (sameCountStreak >= 3) {
+            if (!document.querySelector('ytd-continuation-item-renderer')) break;
+            await sleep(600);
+            if (sameCountStreak >= 4) break;
+          }
+        } else {
+          sameCountStreak = 0;
+        }
+        lastCount = currentCount;
+      }
+    } finally {
+      window.scrollTo(0, savedWindowY);
+    }
   }
 
   function waitForElement(selector, timeout = 10000) {
@@ -536,17 +542,13 @@
   // ===== INLINE PANEL UI =====
 
   let panelOpen = false;
-
-  function escapeHtml(text) {
-    if (!text) return '';
-    return String(text).replace(/[&<>"']/g, m => ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#039;'
-    })[m]);
-  }
+  let analysisData = null;
+  let playlistData = null;
+  let runId = 0;                 // bumps on every new analysis; stale runs bail out
+  let listView = { query: '', sort: 'index' };
+  let followPlaying = true;      // "From" follows the playing video until the user picks another one
+  let playlistLiveTimer = null;
+  let videoIntervalTimer = null;
 
   function createPanel() {
     if (document.getElementById('yt-pa-panel')) return;
@@ -578,7 +580,7 @@
       <div class="yt-pa-panel-body" id="yt-pa-body">
         <div class="yt-pa-loading" id="yt-pa-loading">
           <div class="yt-pa-spinner"></div>
-          <p>Analyzing playlist...</p>
+          <p id="yt-pa-loading-text">Analyzing playlist...</p>
         </div>
         <div class="yt-pa-no-playlist" id="yt-pa-no-playlist" style="display:none;">
           <svg viewBox="0 0 24 24" width="36" height="36" fill="#717171">
@@ -609,13 +611,17 @@
                   <span class="yt-pa-rem-v" id="yt-pa-rem-count">--</span>
                 </div>
                 <div class="yt-pa-rem-item highlight">
-                  <span class="yt-pa-rem-k">At 1.5×</span>
+                  <span class="yt-pa-rem-k" id="yt-pa-rem-card-label">At 1.5×</span>
                   <span class="yt-pa-rem-v" id="yt-pa-rem-15x">--</span>
                 </div>
                 <div class="yt-pa-rem-item">
                   <span class="yt-pa-rem-k">At 2×</span>
                   <span class="yt-pa-rem-v" id="yt-pa-rem-2x">--</span>
                 </div>
+              </div>
+              <div class="yt-pa-rem-live-row" id="yt-pa-rem-live-row" style="display:none;">
+                <span>Finish at current speed</span>
+                <span id="yt-pa-rem-live-finish">--</span>
               </div>
             </div>
             <div class="yt-pa-divider"></div>
@@ -722,7 +728,10 @@
                 <button class="yt-pa-sort-btn active" data-sort="index">Order</button>
                 <button class="yt-pa-sort-btn" data-sort="duration-asc">Shortest</button>
                 <button class="yt-pa-sort-btn" data-sort="duration-desc">Longest</button>
+                <button class="yt-pa-sort-btn" data-sort="title-asc" title="Sort by title A to Z">A–Z</button>
+                <button class="yt-pa-sort-btn" data-sort="title-desc" title="Sort by title Z to A">Z–A</button>
               </div>
+              <div class="yt-pa-videos-hint" id="yt-pa-videos-hint">Click a video to play it</div>
             </div>
             <div id="yt-pa-videos-list" class="yt-pa-videos-list"></div>
           </div>
@@ -773,56 +782,61 @@
     });
 
     // Mode toggle button (for watch page with playlist)
-    const modeToggle = document.getElementById('yt-pa-mode-toggle');
-    if (modeToggle) {
-      modeToggle.addEventListener('click', () => {
-        if (activeWatchMode === 'playlist') {
-          activeWatchMode = 'video';
-        } else {
-          activeWatchMode = 'playlist';
-        }
-        runAnalysis();
-      });
-    }
+    document.getElementById('yt-pa-mode-toggle').addEventListener('click', () => {
+      activeWatchMode = (activeWatchMode === 'playlist') ? 'video' : 'playlist';
+      runAnalysis();
+    });
 
-    // Custom calculator & remaining inputs
+    // "From" dropdown: following the playing video stays on until the user picks another one
     const fromVidSelect = document.getElementById('yt-pa-from-vid-select');
-    if (fromVidSelect) {
-      fromVidSelect.addEventListener('change', () => {
-        updateInlineRemaining(fromVidSelect.value);
-      });
-    }
-    const customScope = document.getElementById('yt-pa-custom-scope');
-    if (customScope) customScope.addEventListener('change', updateCustomCalc);
-    const customHrs = document.getElementById('yt-pa-custom-hrs');
-    const customSpd = document.getElementById('yt-pa-custom-spd');
-    if (customHrs) customHrs.addEventListener('change', updateCustomCalc);
-    if (customSpd) customSpd.addEventListener('change', updateCustomCalc);
+    fromVidSelect.addEventListener('change', () => {
+      const picked = parseInt(fromVidSelect.value, 10);
+      followPlaying = !!playlistData && picked === getPlayingIndex(playlistData.videos);
+      updateInlineRemaining();
+      highlightInlineCurrentVideo();
+    });
 
-    // Video search & sort in Videos tab
-    const vidSearch = document.getElementById('yt-pa-video-search');
-    if (vidSearch) {
-      vidSearch.addEventListener('input', (e) => {
-        filterInlineVideos(e.target.value);
-      });
-    }
+    document.getElementById('yt-pa-custom-scope').addEventListener('change', updateCustomCalc);
+    document.getElementById('yt-pa-custom-hrs').addEventListener('change', updateCustomCalc);
+    const customSpd = document.getElementById('yt-pa-custom-spd');
+    customSpd.value = String(parseFloat(settings.defaultSpeed) || 1.5);
+    if (!customSpd.value) customSpd.value = '1.5';
+    customSpd.addEventListener('change', () => {
+      customSpd.dataset.userChanged = '1';
+      updateCustomCalc();
+    });
+
+    // Video search & sort in Videos tab (they combine)
+    document.getElementById('yt-pa-video-search').addEventListener('input', (e) => {
+      listView.query = e.target.value;
+      renderInlineVideoList();
+    });
 
     panel.querySelectorAll('.yt-pa-sort-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         panel.querySelectorAll('.yt-pa-sort-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        sortInlineVideos(btn.dataset.sort);
+        listView.sort = btn.dataset.sort;
+        renderInlineVideoList();
       });
     });
+
+    // One delegated click handler for the video list
+    document.getElementById('yt-pa-videos-list').addEventListener('click', onVideoListClick);
   }
 
-  let analysisData = null;
-  let playlistData = null;
+  function resetListView() {
+    listView = { query: '', sort: 'index' };
+    const search = document.getElementById('yt-pa-video-search');
+    if (search) search.value = '';
+    document.querySelectorAll('#yt-pa-panel .yt-pa-sort-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.sort === 'index');
+    });
+  }
 
   function togglePanel() {
     if (!isContextValid()) return;
     panelOpen = !panelOpen;
-    const panel = document.getElementById('yt-pa-panel');
     const btn = document.getElementById('yt-playlist-analyzer-btn');
 
     if (panelOpen) {
@@ -832,182 +846,174 @@
       if (btn) btn.classList.add('active');
       runAnalysis();
     } else {
-      if (panel) {
-        panel.classList.remove('open');
-        if (btn) btn.classList.remove('active');
-      }
+      runId++; // cancel any in-flight playlist scroll
+      const panel = document.getElementById('yt-pa-panel');
+      if (panel) panel.classList.remove('open');
+      if (btn) btn.classList.remove('active');
       stopVideoAnalyzer();
+      stopPlaylistLive();
     }
   }
-
-  let videoTimeUpdateHandler = null;
-  let videoIntervalTimer = null;
 
   function stopVideoAnalyzer() {
     if (videoIntervalTimer) {
       clearInterval(videoIntervalTimer);
       videoIntervalTimer = null;
     }
-    const video = document.querySelector('video.html5-main-video') || document.querySelector('video');
-    if (video && videoTimeUpdateHandler) {
-      video.removeEventListener('timeupdate', videoTimeUpdateHandler);
-      videoTimeUpdateHandler = null;
+  }
+
+  function stopPlaylistLive() {
+    if (playlistLiveTimer) {
+      clearInterval(playlistLiveTimer);
+      playlistLiveTimer = null;
     }
+  }
+
+  function showNoMedia(title, sub) {
+    const loading = document.getElementById('yt-pa-loading');
+    const noPlaylist = document.getElementById('yt-pa-no-playlist');
+    if (loading) loading.style.display = 'none';
+    if (!noPlaylist) return;
+    noPlaylist.style.display = 'flex';
+    noPlaylist.querySelector('p:first-of-type').textContent = title;
+    noPlaylist.querySelector('p:last-of-type').textContent = sub;
   }
 
   async function runAnalysis() {
     if (!isContextValid()) return;
+    const myRun = ++runId;
+    const isStale = () => myRun !== runId || !isContextValid() || !panelOpen;
+
     const loading = document.getElementById('yt-pa-loading');
     const noPlaylist = document.getElementById('yt-pa-no-playlist');
     const results = document.getElementById('yt-pa-results');
     const videoResults = document.getElementById('yt-pa-video-results');
     const topNav = document.getElementById('yt-pa-top-nav');
     const headerTitle = document.getElementById('yt-pa-header-title');
-    const modeToggle = document.getElementById('yt-pa-mode-toggle');
+    if (!loading) return;
 
     loading.style.display = 'flex';
+    setLoadingText('Analyzing playlist...');
     noPlaylist.style.display = 'none';
     results.style.display = 'none';
     if (videoResults) videoResults.style.display = 'none';
     if (topNav) topNav.style.display = 'none';
 
     stopVideoAnalyzer();
+    stopPlaylistLive();
 
-    // Configure mode toggle button on /watch with playlist queue
-    if (modeToggle) {
-      if (isVideoWatchPage() && hasPlaylistParam()) {
-        modeToggle.style.display = 'inline-block';
-        modeToggle.textContent = (activeWatchMode === 'playlist') ? 'View Video ❯' : 'View Playlist ❯';
-      } else {
-        modeToggle.style.display = 'none';
-      }
-    }
+    updateModeToggle();
 
     if (isPlaylistPage()) {
       if (headerTitle) headerTitle.textContent = 'Playlist Analyzer';
-      await runPlaylistAnalysis();
+      await runPlaylistAnalysis(isStale);
     } else if (isVideoPage()) {
       if (headerTitle) headerTitle.textContent = 'Video Analyzer';
       runVideoAnalysis();
     } else {
-      loading.style.display = 'none';
-      noPlaylist.style.display = 'flex';
-      noPlaylist.querySelector('p:first-of-type').textContent = 'No Media Found';
-      noPlaylist.querySelector('p:last-of-type').textContent = 'Open any YouTube video or playlist to analyze.';
+      showNoMedia('No Media Found', 'Open any YouTube video or playlist to analyze.');
     }
   }
 
-  async function runPlaylistAnalysis() {
+  // "View Video / View Playlist" switch, only on /watch pages that have a playlist queue
+  function updateModeToggle() {
+    const modeToggle = document.getElementById('yt-pa-mode-toggle');
+    if (!modeToggle) return;
+    if (isVideoWatchPage() && hasPlaylistParam()) {
+      modeToggle.style.display = 'inline-block';
+      modeToggle.textContent = (activeWatchMode === 'playlist') ? 'View Video ❯' : 'View Playlist ❯';
+    } else {
+      modeToggle.style.display = 'none';
+    }
+  }
+
+  function canReuseCachedPlaylist() {
+    return !!(playlistData && analysisData &&
+      playlistData.playlistId === getPlaylistId() &&
+      playlistData.loadedVideoCount >= playlistData.totalVideoCount);
+  }
+
+  async function runPlaylistAnalysis(isStale) {
     const loading = document.getElementById('yt-pa-loading');
-    const noPlaylist = document.getElementById('yt-pa-no-playlist');
     const results = document.getElementById('yt-pa-results');
     const topNav = document.getElementById('yt-pa-top-nav');
 
     try {
-      playlistData = await extractPlaylistData();
-      const videos = playlistData.videos;
+      if (!canReuseCachedPlaylist()) {
+        const data = await extractPlaylistData(isStale);
+        if (isStale()) return; // user navigated / closed the panel meanwhile
 
-      if (!videos || videos.length === 0) {
-        loading.style.display = 'none';
-        noPlaylist.style.display = 'flex';
-        return;
+        if (!data.videos || data.videos.length === 0) {
+          showNoMedia('No Playlist Found', 'Open any YouTube playlist or video to analyze.');
+          return;
+        }
+
+        playlistData = data;
+        analysisData = analyzePlaylist(data.videos);
+        followPlaying = true;
+        resetListView();
+        saveHistory();
       }
-
-      // Run analysis locally
-      const totalSeconds = videos.reduce((sum, v) => sum + v.durationSeconds, 0);
-      const speeds = [1, 1.25, 1.5, 1.75, 2, 2.5, 3];
-      const speedAnalysis = speeds.map(speed => ({
-        speed,
-        totalSeconds: Math.round(totalSeconds / speed),
-        formatted: formatDuration(Math.round(totalSeconds / speed))
-      }));
-
-      const avgSeconds = Math.round(totalSeconds / videos.length);
-      const sorted = [...videos].sort((a, b) => a.durationSeconds - b.durationSeconds);
-
-      const dailySchedules = [
-        { hoursPerDay: 0.5, label: '30 min/day' },
-        { hoursPerDay: 1, label: '1 hr/day' },
-        { hoursPerDay: 2, label: '2 hrs/day' },
-        { hoursPerDay: 3, label: '3 hrs/day' },
-        { hoursPerDay: 5, label: '5 hrs/day' }
-      ].map(s => ({
-        ...s,
-        days: Math.ceil(totalSeconds / (s.hoursPerDay * 3600)),
-        daysAt1_5x: Math.ceil((totalSeconds / 1.5) / (s.hoursPerDay * 3600)),
-        daysAt2x: Math.ceil((totalSeconds / 2) / (s.hoursPerDay * 3600))
-      }));
-
-      analysisData = {
-        totalVideos: videos.length,
-        totalDuration: formatDuration(totalSeconds),
-        totalSeconds,
-        averageDuration: formatDuration(avgSeconds),
-        shortest: sorted[0],
-        longest: sorted[sorted.length - 1],
-        speedAnalysis,
-        dailySchedules
-      };
 
       renderInlineResults();
       loading.style.display = 'none';
       if (topNav) topNav.style.display = 'block';
       results.style.display = 'block';
+      startPlaylistLive();
 
     } catch (err) {
-      loading.style.display = 'none';
-      noPlaylist.style.display = 'flex';
-      noPlaylist.querySelector('p:first-of-type').textContent = 'Error';
-      noPlaylist.querySelector('p:last-of-type').textContent = err.message;
+      if (isStale()) return;
+      showNoMedia('Error', err.message);
     }
+  }
+
+  function saveHistory() {
+    if (!settings.saveHistory || !playlistData || !analysisData || !isContextValid()) return;
+    try {
+      chrome.runtime.sendMessage({
+        type: 'SAVE_HISTORY',
+        data: {
+          playlistTitle: playlistData.playlistTitle,
+          playlistUrl: playlistData.playlistUrl,
+          totalVideos: analysisData.totalVideos,
+          totalDuration: analysisData.totalDuration,
+          totalSeconds: analysisData.totalSeconds
+        }
+      }).catch(() => {});
+    } catch (e) { /* context gone */ }
   }
 
   function runVideoAnalysis() {
     const loading = document.getElementById('yt-pa-loading');
     const noPlaylist = document.getElementById('yt-pa-no-playlist');
     const videoResults = document.getElementById('yt-pa-video-results');
-    const results = document.getElementById('yt-pa-results');
-    const topNav = document.getElementById('yt-pa-top-nav');
 
-    if (results) results.style.display = 'none';
-    if (topNav) topNav.style.display = 'none';
-
-    const video = document.querySelector('video.html5-main-video') || document.querySelector('video');
-    if (!video) {
-      loading.style.display = 'flex';
+    const show = () => {
+      loading.style.display = 'none';
       noPlaylist.style.display = 'none';
-      if (videoResults) videoResults.style.display = 'none';
+      videoResults.style.display = 'block';
+      initVideoAnalysisDOM();
+      updateVideoAnalysisUI();
+      startVideoInterval();
+      const v = getMainVideo();
+      if (v) v.addEventListener('loadedmetadata', updateVideoAnalysisUI, { once: true });
+    };
 
-      // Brief retry for SPA page transitions where video element takes a moment to mount
-      setTimeout(() => {
-        if (!panelOpen || !isVideoPage()) return;
-        const v = document.querySelector('video.html5-main-video') || document.querySelector('video');
-        if (v) {
-          loading.style.display = 'none';
-          if (videoResults) videoResults.style.display = 'block';
-          initVideoAnalysisDOM();
-          updateVideoAnalysisUI();
-          startVideoInterval();
-          v.addEventListener('loadedmetadata', updateVideoAnalysisUI, { once: true });
-        } else {
-          loading.style.display = 'none';
-          noPlaylist.style.display = 'flex';
-          noPlaylist.querySelector('p:first-of-type').textContent = 'No Video Playing';
-          noPlaylist.querySelector('p:last-of-type').textContent = 'Please play a video on YouTube.';
-        }
-      }, 400);
+    if (getMainVideo()) {
+      show();
       return;
     }
 
-    loading.style.display = 'none';
-    noPlaylist.style.display = 'none';
-    videoResults.style.display = 'block';
-
-    initVideoAnalysisDOM();
-    updateVideoAnalysisUI();
-    startVideoInterval();
-
-    video.addEventListener('loadedmetadata', updateVideoAnalysisUI, { once: true });
+    // Brief retry for SPA page transitions where video element takes a moment to mount
+    const myRun = runId;
+    setTimeout(() => {
+      if (!panelOpen || !isVideoPage() || myRun !== runId) return;
+      if (getMainVideo()) {
+        show();
+      } else {
+        showNoMedia('No Video Playing', 'Please play a video on YouTube.');
+      }
+    }, 400);
   }
 
   function startVideoInterval() {
@@ -1024,10 +1030,9 @@
   function initVideoAnalysisDOM() {
     const speedsTable = document.getElementById('yt-pa-vid-speeds-table');
     const tsGrid = document.getElementById('yt-pa-vid-time-saved-grid');
-    const speeds = [1, 1.25, 1.5, 1.75, 2, 2.5, 3];
 
     if (speedsTable && !speedsTable.hasChildNodes()) {
-      speedsTable.innerHTML = speeds.map(sp => `
+      speedsTable.innerHTML = SPEEDS.map(sp => `
         <div class="yt-pa-vid-speed-row" data-speed="${sp}">
           <span class="yt-pa-vid-speed-label">${sp}×</span>
           <span class="yt-pa-vid-speed-time">--</span>
@@ -1040,7 +1045,7 @@
         row.addEventListener('click', (e) => {
           e.stopPropagation();
           const targetSpeed = parseFloat(row.dataset.speed);
-          const vid = document.querySelector('video.html5-main-video') || document.querySelector('video');
+          const vid = getMainVideo();
           if (!isNaN(targetSpeed) && vid) {
             vid.playbackRate = targetSpeed;
             updateVideoAnalysisUI();
@@ -1050,7 +1055,7 @@
     }
 
     if (tsGrid && !tsGrid.hasChildNodes()) {
-      tsGrid.innerHTML = [1.25, 1.5, 2, 3].map(sp => `
+      tsGrid.innerHTML = TIME_SAVED_SPEEDS.map(sp => `
         <div class="yt-pa-ts-row" data-speed="${sp}">
           <span class="yt-pa-ts-label">At ${sp}×</span>
           <span class="yt-pa-ts-val">--</span>
@@ -1059,9 +1064,13 @@
     }
   }
 
+  function clockAfter(seconds) {
+    return new Date(Date.now() + seconds * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+
   function updateVideoAnalysisUI() {
     if (!isContextValid()) return;
-    const video = document.querySelector('video.html5-main-video') || document.querySelector('video');
+    const video = getMainVideo();
     if (!video || isNaN(video.duration) || video.duration <= 0) return;
 
     const meta = getVideoMeta();
@@ -1076,42 +1085,35 @@
     const remainingSeconds = Math.max(0, duration - currentTime);
     const progressPercent = Math.min(100, Math.max(0, (currentTime / duration) * 100));
 
-    // Progress bar and times
     const fillEl = document.getElementById('yt-pa-vid-progress-fill');
     if (fillEl) fillEl.style.width = `${progressPercent.toFixed(1)}%`;
 
     const currEl = document.getElementById('yt-pa-vid-current');
     const totEl = document.getElementById('yt-pa-vid-total');
-    if (currEl) currEl.textContent = formatTime(Math.round(currentTime));
-    if (totEl) totEl.textContent = formatTime(Math.round(duration));
+    if (currEl) currEl.textContent = formatTime(currentTime);
+    if (totEl) totEl.textContent = formatTime(duration);
 
-    // Finish badge
     const adjustedRemaining = remainingSeconds / currentSpeed;
-    const endDate = new Date(Date.now() + adjustedRemaining * 1000);
-    const endClockStr = endDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-
     const clockEl = document.getElementById('yt-pa-vid-end-clock');
     const remainEl = document.getElementById('yt-pa-vid-remain-text');
-    if (clockEl) clockEl.textContent = endClockStr;
-    if (remainEl) remainEl.textContent = `${formatDuration(Math.round(adjustedRemaining))} left (${currentSpeed}×)`;
+    if (clockEl) clockEl.textContent = clockAfter(adjustedRemaining);
+    if (remainEl) remainEl.textContent = `${formatDuration(adjustedRemaining)} left (${currentSpeed}×)`;
 
-    // Update speeds table text only
     const speedsTable = document.getElementById('yt-pa-vid-speeds-table');
     if (speedsTable) {
       speedsTable.querySelectorAll('.yt-pa-vid-speed-row').forEach(row => {
         const sp = parseFloat(row.dataset.speed);
         if (isNaN(sp)) return;
         const spRemaining = Math.max(0, remainingSeconds / sp);
-        const spFinish = new Date(Date.now() + spRemaining * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
         const isCurrent = Math.abs(currentSpeed - sp) < 0.05;
 
         row.classList.toggle('active', isCurrent);
 
         const timeEl = row.querySelector('.yt-pa-vid-speed-time');
-        if (timeEl) timeEl.textContent = `${formatDuration(Math.round(spRemaining))} left`;
+        if (timeEl) timeEl.textContent = `${formatDuration(spRemaining)} left`;
 
         const finishEl = row.querySelector('.yt-pa-vid-speed-finish');
-        if (finishEl) finishEl.textContent = `Ends at ${spFinish}`;
+        if (finishEl) finishEl.textContent = `Ends at ${clockAfter(spRemaining)}`;
 
         const btnEl = row.querySelector('.yt-pa-vid-set-speed-btn');
         if (btnEl) {
@@ -1121,65 +1123,61 @@
       });
     }
 
-    // Update time saved grid text only
     const tsGrid = document.getElementById('yt-pa-vid-time-saved-grid');
     if (tsGrid) {
-      const baseRemaining = remainingSeconds;
       tsGrid.querySelectorAll('.yt-pa-ts-row').forEach(item => {
         const sp = parseFloat(item.dataset.speed);
         if (isNaN(sp)) return;
-        const saved = Math.max(0, baseRemaining - Math.round(baseRemaining / sp));
+        const saved = Math.max(0, remainingSeconds - remainingSeconds / sp);
         const valEl = item.querySelector('.yt-pa-ts-val');
         if (valEl) valEl.textContent = formatDuration(saved);
       });
     }
   }
 
+  function extremeHtml(v) {
+    const title = v.title.length > 40 ? v.title.substring(0, 38) + '...' : v.title;
+    return `
+      <span class="yt-pa-ov-ext-title" title="${escapeHtml(v.title)}">${escapeHtml(title)}</span>
+      <span class="yt-pa-ov-ext-time">${formatTime(v.durationSeconds)}</span>
+    `;
+  }
+
   function renderInlineResults() {
     if (!analysisData || !playlistData) return;
+    const a = analysisData;
 
     document.getElementById('yt-pa-playlist-name').textContent = playlistData.playlistTitle;
-    document.getElementById('yt-pa-total-dur').textContent = analysisData.totalDuration;
-    document.getElementById('yt-pa-total-vids').textContent = analysisData.totalVideos;
-    document.getElementById('yt-pa-avg-dur').textContent = analysisData.averageDuration;
+    document.getElementById('yt-pa-total-dur').textContent = a.totalDuration;
+    document.getElementById('yt-pa-avg-dur').textContent = a.averageDuration;
 
-    const at2x = analysisData.speedAnalysis.find(s => s.speed === 2);
+    let videosText = String(a.totalVideos);
+    if (playlistData.totalVideoCount > playlistData.loadedVideoCount) {
+      videosText = `${playlistData.loadedVideoCount} of ${playlistData.totalVideoCount} loaded`;
+    } else if (a.untimedVideos > 0) {
+      videosText = `${a.totalVideos} (${a.untimedVideos} unavailable)`;
+    }
+    document.getElementById('yt-pa-total-vids').textContent = videosText;
+
+    const at2x = a.speedAnalysis.find(s => s.speed === 2);
     document.getElementById('yt-pa-2x-dur').textContent = at2x ? at2x.formatted : '--';
 
-    // Shortest / longest
-    if (analysisData.shortest) {
-      const s = analysisData.shortest;
-      const title = s.title.length > 40 ? s.title.substring(0, 38) + '...' : s.title;
-      document.getElementById('yt-pa-shortest').innerHTML = `
-        <span class="yt-pa-ov-ext-title" title="${escapeHtml(s.title)}">${escapeHtml(title)}</span>
-        <span class="yt-pa-ov-ext-time">${formatTime(s.durationSeconds)}</span>
-      `;
-    }
-    if (analysisData.longest) {
-      const l = analysisData.longest;
-      const title = l.title.length > 40 ? l.title.substring(0, 38) + '...' : l.title;
-      document.getElementById('yt-pa-longest').innerHTML = `
-        <span class="yt-pa-ov-ext-title" title="${escapeHtml(l.title)}">${escapeHtml(title)}</span>
-        <span class="yt-pa-ov-ext-time">${formatTime(l.durationSeconds)}</span>
-      `;
-    }
+    document.getElementById('yt-pa-shortest').innerHTML = a.shortest ? extremeHtml(a.shortest) : '--';
+    document.getElementById('yt-pa-longest').innerHTML = a.longest ? extremeHtml(a.longest) : '--';
 
-    // Speeds
-    const speedsList = document.getElementById('yt-pa-speeds-list');
-    speedsList.innerHTML = analysisData.speedAnalysis.map(item => {
-      const pct = (item.totalSeconds / analysisData.totalSeconds) * 100;
-      const rec = item.speed === 1.5;
-      return `<div class="yt-pa-speed-row ${rec ? 'active' : ''}">
+    // Speeds (highlight the user's default speed)
+    const preferred = parseFloat(settings.defaultSpeed) || 1.5;
+    document.getElementById('yt-pa-speeds-list').innerHTML = a.speedAnalysis.map(item => {
+      const pct = a.totalSeconds > 0 ? (item.totalSeconds / a.totalSeconds) * 100 : 0;
+      return `<div class="yt-pa-speed-row ${item.speed === preferred ? 'active' : ''}">
         <span class="yt-pa-speed-label">${item.speed}×</span>
         <div class="yt-pa-speed-bar-bg"><div class="yt-pa-speed-bar-fill" style="width:${pct}%"></div></div>
         <span class="yt-pa-speed-val">${item.formatted}</span>
       </div>`;
     }).join('');
 
-    // Time saved
-    const tsGrid = document.getElementById('yt-pa-time-saved-grid');
-    tsGrid.innerHTML = [1.25, 1.5, 2, 3].map(sp => {
-      const saved = analysisData.totalSeconds - Math.round(analysisData.totalSeconds / sp);
+    document.getElementById('yt-pa-time-saved-grid').innerHTML = TIME_SAVED_SPEEDS.map(sp => {
+      const saved = a.totalSeconds - Math.round(a.totalSeconds / sp);
       return `<div class="yt-pa-ts-row">
         <span class="yt-pa-ts-label">At ${sp}×</span>
         <span class="yt-pa-ts-val">${formatDuration(saved)}</span>
@@ -1187,8 +1185,7 @@
     }).join('');
 
     // Schedule
-    const schedList = document.getElementById('yt-pa-schedule-list');
-    schedList.innerHTML = `
+    document.getElementById('yt-pa-schedule-list').innerHTML = `
       <div class="yt-pa-sched-header">
         <span class="yt-pa-sched-col-time">Watch time / day</span>
         <span class="yt-pa-sched-col">1×</span>
@@ -1196,7 +1193,7 @@
         <span class="yt-pa-sched-col">2×</span>
       </div>
       <div class="yt-pa-sched-body">
-        ${analysisData.dailySchedules.map(s => `
+        ${a.dailySchedules.map(s => `
           <div class="yt-pa-sched-row">
             <span class="yt-pa-sched-col-time">${s.label}</span>
             <span class="yt-pa-sched-col">${s.days}d</span>
@@ -1207,55 +1204,76 @@
       </div>
     `;
 
-    // Initialize remaining progress card with video dropdown
-    const initialFromIdx = playlistData.currentVideoIndex || 1;
+    // "From" dropdown
     const fromVidSelect = document.getElementById('yt-pa-from-vid-select');
-    if (fromVidSelect && playlistData.videos) {
-      fromVidSelect.innerHTML = playlistData.videos.map(v => {
-        const cleanTitle = (v.title || '').replace(/\s+/g, ' ').trim();
-        const shortTitle = cleanTitle.length > 24 ? cleanTitle.substring(0, 22) + '…' : cleanTitle;
-        const dur = v.durationFormatted ? ` (${v.durationFormatted})` : '';
-        return `<option value="${v.index}">Video ${v.index}: ${escapeHtml(shortTitle)}${dur}</option>`;
-      }).join('');
-      fromVidSelect.value = initialFromIdx;
-    }
-    updateInlineRemaining(initialFromIdx);
-    renderInlineVideoList();
+    const previousFrom = parseInt(fromVidSelect.value, 10);
+    fromVidSelect.innerHTML = playlistData.videos.map(v => {
+      const cleanTitle = (v.title || '').replace(/\s+/g, ' ').trim();
+      const shortTitle = cleanTitle.length > 24 ? cleanTitle.substring(0, 22) + '…' : cleanTitle;
+      const dur = v.durationFormatted ? ` (${v.durationFormatted})` : '';
+      return `<option value="${v.index}">Video ${v.index}: ${escapeHtml(shortTitle)}${dur}</option>`;
+    }).join('');
+    const playing = getPlayingIndex(playlistData.videos);
+    fromVidSelect.value = (followPlaying || !previousFrom)
+      ? (playing || playlistData.currentVideoIndex || 1)
+      : previousFrom;
 
-    updateCustomCalc();
+    renderInlineVideoList();
+    updateInlineRemaining();
   }
 
-  function updateInlineRemaining(fromIdx) {
+  function getFromIndex() {
+    const sel = document.getElementById('yt-pa-from-vid-select');
+    return clampIndex(sel ? sel.value : 1, playlistData ? playlistData.videos.length : 1);
+  }
+
+  // Seconds already watched of video `idx` if it is the one playing right now.
+  function liveElapsedFor(idx) {
+    if (!playlistData || idx !== getPlayingIndex(playlistData.videos)) return null;
+    if (getPlaylistId() !== playlistData.playlistId) return null;
+    const video = getMainVideo();
+    if (!video || isAdPlaying() || !(video.duration > 0)) return { elapsed: 0, rate: 1 };
+    return { elapsed: video.currentTime || 0, rate: video.playbackRate || 1 };
+  }
+
+  function updateInlineRemaining() {
     if (!playlistData || !playlistData.videos || playlistData.videos.length === 0) return;
-    const total = playlistData.videos.length;
-    fromIdx = Math.max(1, Math.min(parseInt(fromIdx, 10) || 1, total));
-
-    const fromVidSelect = document.getElementById('yt-pa-from-vid-select');
-    if (fromVidSelect && parseInt(fromVidSelect.value, 10) !== fromIdx) {
-      fromVidSelect.value = fromIdx;
-    }
-
-    const remVideos = playlistData.videos.slice(fromIdx - 1);
-    const remSeconds = remVideos.reduce((sum, v) => sum + v.durationSeconds, 0);
+    const fromIdx = getFromIndex();
+    const live = liveElapsedFor(fromIdx);
+    const rem = computeRemaining(playlistData.videos, fromIdx, live ? live.elapsed : 0);
 
     const badge = document.getElementById('yt-pa-rem-badge');
     if (badge) {
-      badge.textContent = fromIdx > 1 ? `Now at Video ${fromIdx}` : `Full Playlist (${total} vids)`;
+      badge.classList.toggle('live', !!live);
+      if (live) {
+        badge.textContent = `Now at Video ${fromIdx}`;
+      } else if (fromIdx > 1) {
+        badge.textContent = `From Video ${fromIdx}`;
+      } else {
+        badge.textContent = `Full Playlist (${playlistData.videos.length} vids)`;
+      }
     }
 
-    const durEl = document.getElementById('yt-pa-rem-dur');
-    if (durEl) durEl.textContent = formatDuration(remSeconds);
+    const cardSp = cardSpeed(settings.defaultSpeed);
+    const set = (id, text) => {
+      const el = document.getElementById(id);
+      if (el && el.textContent !== text) el.textContent = text;
+    };
+    set('yt-pa-rem-dur', formatDuration(rem.seconds));
+    set('yt-pa-rem-count', `${rem.count} vids left`);
+    set('yt-pa-rem-card-label', `At ${cardSp}×`);
+    set('yt-pa-rem-15x', formatDuration(rem.seconds / cardSp));
+    set('yt-pa-rem-2x', formatDuration(rem.seconds / 2));
 
-    const countEl = document.getElementById('yt-pa-rem-count');
-    if (countEl) countEl.textContent = `${remVideos.length} vids left`;
+    const liveRow = document.getElementById('yt-pa-rem-live-row');
+    if (liveRow) {
+      liveRow.style.display = live ? 'flex' : 'none';
+      if (live) {
+        const atRate = rem.seconds / live.rate;
+        set('yt-pa-rem-live-finish', `${formatDuration(atRate)} at ${live.rate}× · ends ${clockAfter(atRate)}`);
+      }
+    }
 
-    const at15xEl = document.getElementById('yt-pa-rem-15x');
-    if (at15xEl) at15xEl.textContent = formatDuration(Math.round(remSeconds / 1.5));
-
-    const at2xEl = document.getElementById('yt-pa-rem-2x');
-    if (at2xEl) at2xEl.textContent = formatDuration(Math.round(remSeconds / 2));
-
-    highlightInlineCurrentVideo(fromIdx);
     updateCustomCalc();
   }
 
@@ -1267,94 +1285,136 @@
 
     let targetSeconds = analysisData.totalSeconds;
     if (scope === 'remaining') {
-      const fromIdx = Math.max(1, Math.min(parseInt(document.getElementById('yt-pa-from-vid-select')?.value, 10) || 1, playlistData.videos.length));
-      const remVideos = playlistData.videos.slice(fromIdx - 1);
-      targetSeconds = remVideos.reduce((sum, v) => sum + v.durationSeconds, 0);
+      const fromIdx = getFromIndex();
+      const live = liveElapsedFor(fromIdx);
+      targetSeconds = computeRemaining(playlistData.videos, fromIdx, live ? live.elapsed : 0).seconds;
     }
 
-    const days = Math.ceil((targetSeconds / spd) / (hrs * 3600));
     const el = document.getElementById('yt-pa-custom-days');
-    if (el) el.textContent = `${days} day${days > 1 ? 's' : ''}`;
+    const text = formatDays(daysToFinish(targetSeconds, spd, hrs));
+    if (el && el.textContent !== text) el.textContent = text;
   }
 
-  function renderInlineVideoList(videos = null) {
+  // Ticks every second while the playlist view is open: follows autoplay /
+  // video changes and counts down the remaining time of the playing video.
+  function startPlaylistLive() {
+    stopPlaylistLive();
+    playlistLiveTimer = setInterval(() => {
+      if (!panelOpen || !isPlaylistPage() || !playlistData || !isContextValid()) {
+        stopPlaylistLive();
+        return;
+      }
+      syncPlayingVideo();
+      updateInlineRemaining();
+    }, 1000);
+  }
+
+  function syncPlayingVideo() {
+    if (!playlistData) return;
+    const playing = getPlayingIndex(playlistData.videos);
+    if (!playing || playing === playlistData.currentVideoIndex) return;
+
+    playlistData.currentVideoIndex = playing;
+    if (followPlaying) {
+      const sel = document.getElementById('yt-pa-from-vid-select');
+      if (sel) sel.value = playing;
+    }
+    highlightInlineCurrentVideo();
+  }
+
+  function renderInlineVideoList() {
     const container = document.getElementById('yt-pa-videos-list');
     if (!container || !playlistData || !playlistData.videos) return;
 
-    const fromVidSelect = document.getElementById('yt-pa-from-vid-select');
-    const currentFromIndex = fromVidSelect ? (parseInt(fromVidSelect.value, 10) || 1) : (playlistData.currentVideoIndex || 1);
+    const fromIdx = getFromIndex();
+    const playing = getPlayingIndex(playlistData.videos);
+    const visible = getVisibleVideos(playlistData.videos, listView.query, listView.sort);
 
-    const videoData = videos || playlistData.videos;
+    if (visible.length === 0) {
+      container.innerHTML = '<p class="yt-pa-empty-text">No videos match your search</p>';
+      return;
+    }
 
-    container.innerHTML = videoData.map(video => {
+    container.innerHTML = visible.map(video => {
       const idx = video.index || 0;
-      const isCurrent = idx === currentFromIndex;
-      const isWatched = idx < currentFromIndex;
+      const classes = [
+        'yt-pa-video-item',
+        video.isUnavailable ? 'unavailable' : '',
+        idx === fromIdx ? 'current-video' : '',
+        idx < fromIdx ? 'watched-video' : '',
+        idx === playing ? 'playing-video' : '',
+        video.url ? 'has-link' : ''
+      ].filter(Boolean).join(' ');
       return `
-        <div class="yt-pa-video-item ${video.isUnavailable ? 'unavailable' : ''} ${isCurrent ? 'current-video' : ''} ${isWatched ? 'watched-video' : ''}" 
-             data-url="${video.url || ''}" 
-             data-index="${video.index || ''}"
-             data-duration="${video.durationSeconds || 0}"
-             title="${escapeHtml(video.title || '')}">
-          <span class="yt-pa-vid-item-index">${video.index || ''}</span>
+        <div class="${classes}" data-index="${idx}" title="${escapeHtml(video.title || '')}">
+          <button type="button" class="yt-pa-vid-item-index" data-index="${idx}"
+                  ${video.url ? '' : 'disabled'} aria-label="Play video ${idx}">${idx}</button>
           <span class="yt-pa-vid-item-title">${escapeHtml(video.title || 'Untitled')}</span>
           <span class="yt-pa-vid-item-duration">${video.durationFormatted || '--'}</span>
         </div>
       `;
     }).join('');
-
-    container.querySelectorAll('.yt-pa-video-item').forEach(item => {
-      item.addEventListener('click', () => {
-        const idx = parseInt(item.dataset.index, 10);
-        if (fromVidSelect && !isNaN(idx)) {
-          fromVidSelect.value = idx;
-          updateInlineRemaining(idx);
-        }
-        const url = item.dataset.url;
-        if (url) {
-          window.location.href = url;
-        }
-      });
-    });
   }
 
-  function highlightInlineCurrentVideo(fromIdx) {
+  function onVideoListClick(e) {
+    const item = e.target.closest('.yt-pa-video-item');
+    if (!item || !playlistData) return;
+    const idx = parseInt(item.dataset.index, 10);
+    const video = playlistData.videos[idx - 1];
+    if (!video || !video.url) return;
+
+    if (e.ctrlKey || e.metaKey || e.button === 1) {
+      window.open(video.url, '_blank', 'noopener');
+      return;
+    }
+    openVideo(video);
+  }
+
+  // Opens a playlist video using YouTube's own (SPA) navigation when possible,
+  // so the page doesn't fully reload and the panel stays in playlist mode.
+  function openVideo(video) {
+    activeWatchMode = 'playlist';
+    followPlaying = true;
+    const sel = document.getElementById('yt-pa-from-vid-select');
+    if (sel) sel.value = video.index;
+
+    navigateToVideoUrl(video.url, video.index);
+    updateInlineRemaining();
+    highlightInlineCurrentVideo();
+  }
+
+  // Clicks YouTube's own link for the video (SPA navigation, no reload).
+  // Tries the item at `index` first (handles duplicates), then any matching item,
+  // and falls back to a normal page load.
+  function navigateToVideoUrl(url, index) {
+    const targetId = videoIdFromUrl(url);
+    if (!targetId) return false;
+
+    const items = Array.from(getItemElements());
+    const preferred = index ? items[index - 1] : null;
+    const candidates = preferred ? [preferred, ...items] : items;
+    for (const item of candidates) {
+      const link = item.querySelector(ITEM_LINK_SELECTOR);
+      if (link && videoIdFromUrl(link.href) === targetId) {
+        link.click();
+        return true;
+      }
+    }
+    window.location.assign(url);
+    return true;
+  }
+
+  function highlightInlineCurrentVideo() {
     const container = document.getElementById('yt-pa-videos-list');
-    if (!container) return;
+    if (!container || !playlistData) return;
+    const fromIdx = getFromIndex();
+    const playing = getPlayingIndex(playlistData.videos);
     container.querySelectorAll('.yt-pa-video-item').forEach(item => {
       const idx = parseInt(item.dataset.index, 10);
       item.classList.toggle('current-video', idx === fromIdx);
       item.classList.toggle('watched-video', idx < fromIdx);
+      item.classList.toggle('playing-video', idx === playing);
     });
-  }
-
-  function filterInlineVideos(query) {
-    if (!playlistData || !playlistData.videos) return;
-    const filtered = query
-      ? playlistData.videos.filter(v =>
-          (v.title || '').toLowerCase().includes(query.toLowerCase()))
-      : playlistData.videos;
-    renderInlineVideoList(filtered);
-  }
-
-  function sortInlineVideos(sortType) {
-    if (!playlistData || !playlistData.videos) return;
-    let sorted = [...playlistData.videos];
-
-    switch (sortType) {
-      case 'duration-asc':
-        sorted.sort((a, b) => (a.durationSeconds || 0) - (b.durationSeconds || 0));
-        break;
-      case 'duration-desc':
-        sorted.sort((a, b) => (b.durationSeconds || 0) - (a.durationSeconds || 0));
-        break;
-      case 'index':
-      default:
-        sorted.sort((a, b) => (a.index || 0) - (b.index || 0));
-        break;
-    }
-
-    renderInlineVideoList(sorted);
   }
 
   // ===== FLOATING BUTTON =====
@@ -1375,6 +1435,7 @@
       <span class="yt-pa-tooltip">Playlist Analyzer</span>
     `;
     btn.title = 'YouTube Playlist Analyzer';
+    if (!settings.showFloatingBtn) btn.classList.add('yt-pa-off');
     btn.addEventListener('click', () => {
       if (!isContextValid()) return;
       togglePanel();
@@ -1392,13 +1453,6 @@
       if (currentUrl === lastTrackedUrl) return;
       lastTrackedUrl = currentUrl;
 
-      // Reset active mode selection and stale cache
-      activeWatchMode = null;
-      playlistData = null;
-      analysisData = null;
-      stopVideoAnalyzer();
-
-      // Ensure floating button exists
       setTimeout(() => {
         if (!isContextValid()) return;
         if (!document.getElementById('yt-playlist-analyzer-btn')) {
@@ -1406,26 +1460,53 @@
         }
       }, 250);
 
-      // LIVE UPDATION:
-      // If panel is currently open, immediately re-run analysis for the new page without requiring a reload!
+      // Moving to another video of the SAME playlist (autoplay, clicking in the
+      // queue or in our list): keep the loaded data and the current mode, and
+      // just let the live overview pick up the new position.
+      const samePlaylist = !!playlistData && getPlaylistId() === playlistData.playlistId &&
+                           (isVideoWatchPage() || isDedicatedPlaylistPage());
+      if (samePlaylist) {
+        if (!panelOpen) return;
+        if (isPlaylistPage()) {
+          updateModeToggle();
+          if (!playlistLiveTimer) {
+            runAnalysis();
+          } else {
+            syncPlayingVideo();
+            updateInlineRemaining();
+          }
+        } else {
+          runAnalysis();
+        }
+        return;
+      }
+
+      // Different page: reset mode and stale cache
+      activeWatchMode = null;
+      playlistData = null;
+      analysisData = null;
+      stopVideoAnalyzer();
+      stopPlaylistLive();
+
       if (panelOpen) {
         runAnalysis();
+      } else {
+        runId++;
       }
     }
 
-    // Native YouTube SPA navigation events
     window.addEventListener('yt-navigate-finish', handleLocationChange);
     document.addEventListener('yt-navigate-finish', handleLocationChange);
     window.addEventListener('yt-page-data-updated', handleLocationChange);
     window.addEventListener('popstate', handleLocationChange);
 
-    // Backup lightweight URL check every 500ms
+    // Backup lightweight URL check (covers navigations that fire no YouTube event)
     setInterval(() => {
       if (!isContextValid()) return;
       if (window.location.href !== lastTrackedUrl) {
         handleLocationChange();
       }
-    }, 500);
+    }, 1000);
   }
 
   // Watch for fullscreen mode (hide button and close panel during fullscreen video)
@@ -1454,6 +1535,7 @@
 
   // Initialize
   injectFloatingButton();
+  loadSettings();
   watchNavigation();
   setupFullscreenWatcher();
 })();

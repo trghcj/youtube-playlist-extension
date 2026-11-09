@@ -1,6 +1,6 @@
 Add-Type -AssemblyName System.Drawing
 
-$basePath = "c:\Users\suremdra singh\Documents\antigravity\blissful-goodall\youtube-playlist-analyzer\icons"
+$basePath = $PSScriptRoot
 $sizes = @(16, 48, 128)
 
 foreach ($size in $sizes) {
